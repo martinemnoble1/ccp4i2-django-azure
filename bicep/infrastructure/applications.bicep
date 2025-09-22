@@ -421,15 +421,15 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           env: [
             {
               name: 'BACKEND_URL'
-              value: 'https://${serverApp.properties.configuration.ingress.fqdn}'
+              value: 'https://${prefix}-server.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
               name: 'NEXT_PUBLIC_API_URL'
-              value: 'https://${serverApp.properties.configuration.ingress.fqdn}'
+              value: 'https://${prefix}-server.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
               name: 'API_BASE_URL'
-              value: 'https://${serverApp.properties.configuration.ingress.fqdn}'
+              value: 'https://${prefix}-server.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
           ]
           volumeMounts: [
@@ -520,6 +520,19 @@ resource webAppAuth 'Microsoft.App/containerApps/authConfigs@2023-05-01' = if (e
         '/favicon.ico'
         '/RDKit_minimal.wasm'
         '/static/*'
+        '/_vercel/*'
+        '/manifest.json'
+        '/*.js'
+        '/*.css'
+        '/*.woff*'
+        '/*.ttf'
+        '/*.otf'
+        '/*.png'
+        '/*.jpg'
+        '/*.jpeg'
+        '/*.gif'
+        '/*.svg'
+        '/*.ico'
       ]
     }
     identityProviders: {
