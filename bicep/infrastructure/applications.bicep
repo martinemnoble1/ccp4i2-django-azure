@@ -165,6 +165,14 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'ALLOWED_HOSTS'
               value: '${prefix}-web.*.azurecontainerapps.io,${prefix}-server.*.azurecontainerapps.io,localhost,127.0.0.1,*'
             }
+            {
+              name: 'CORS_ALLOWED_ORIGINS'
+              value: 'https://${prefix}-web.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+            }
+            {
+              name: 'CORS_ALLOW_CREDENTIALS'
+              value: 'True'
+            }
           ]
           volumeMounts: [
             {
