@@ -1,0 +1,26 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environment": {
+      "value": "prod"
+    },
+    "location": {
+      "value": "northeurope"
+    },
+    "aadClientId": {
+      "value": "YOUR_AAD_CLIENT_ID"
+    },
+    "aadClientSecret": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/YOUR_RESOURCE_GROUP/providers/Microsoft.KeyVault/vaults/YOUR_KEYVAULT_NAME"
+        },
+        "secretName": "aad-client-secret"
+      }
+    },
+    "aadTenantId": {
+      "value": "YOUR_AAD_TENANT_ID"
+    }
+  }
+}

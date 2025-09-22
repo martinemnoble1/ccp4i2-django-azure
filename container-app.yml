@@ -1,0 +1,111 @@
+# Azure Container Apps Configuration
+# This file defines the multi-container application for CCP4i2
+
+name: ccp4i2-server
+type: Microsoft.App/containerApps
+apiVersion: 2023-05-01
+location: northeurope
+tags:
+  environment: production
+  application: ccp4i2
+
+properties:
+  #managedEnvironmentId:
+  configuration:
+    activeRevisionsMode: Single
+    ingress:
+      external: true
+      targetPort: 8000
+      transport: Auto
+      traffic:
+        - latestRevision: true
+          weight: 100
+      corsPolicy:
+        allowedOrigins:
+          - "*"
+        allowedMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowedHeaders:
+          - "*"
+        maxAge: 3600
+    registries:
+      - server: ccp4i2acrne.azurecr.io
+        username: ccp4i2acrne
+        passwordSecretRef: acr-password
+
+  template:
+    containers:
+      # Django API Server with CCP4
+      - name: ccp4i2-server
+        image: ccp4i2acrne.azurecr.io/ccp4i2/server:latest
+        resources:
+          cpu: 1.0
+          memory: 2Gi
+        env:
+          - name: DEBUG
+            value: "false"
+          - name: ALLOWED_HOSTS
+            value: "localhost,127.0.0.1,ccp4i2-server.yellowocean-72dc64d3.northeurope.azurecontainerapps.io"
+          - name: SECRET_KEY
+            value: "your-secret-key-here-change-in-production"
+          - name: CCP4_DATA_PATH
+            value: "/mnt/ccp4data"
+          - name: PYTHONPATH
+            value: "/usr/src/app"
+        command:
+          - /bin/sh
+          - -c
+          - |
+
+            # Setup CCP4 environment
+            if [ -f /mnt/ccp4data/ccp4-9/bin/ccp4.setup-sh ]; then
+              echo "Setting up CCP4 environment..."
+              . /mnt/ccp4data/ccp4-9/bin/ccp4.setup-sh
+              export CCP4_PYTHON=/mnt/ccp4data/ccp4-9/bin/ccp4-python
+              echo "CCP4 environment configured"
+            else
+              echo "WARNING: CCP4 setup script not found, using system Python"
+              export CCP4_PYTHON=python3
+            fi
+
+            # Change to app directory
+            cd /usr/src/app
+
+            # Install dependencies
+            echo "Installing Python dependencies..."
+            $CCP4_PYTHON -m pip install --upgrade pip
+            $CCP4_PYTHON -m pip install -r requirements.txt
+
+            # Run Django setup
+            echo "Running Django migrations..."
+            $CCP4_PYTHON manage.py migrate
+            $CCP4_PYTHON manage.py collectstatic --noinput
+
+            # Start Django server
+            echo "Starting Django server..."
+            exec $CCP4_PYTHON -m uvicorn asgi:application --host 0.0.0.0 --port 8000
+        volumeMounts:
+          - name: ccp4-data
+            mountPath: /mnt/ccp4data
+
+    volumes:
+      - name: ccp4-data
+        storageType: AzureFile
+        storageName: ccp4-data
+
+    scale:
+      minReplicas: 1
+      maxReplicas: 5
+      rules:
+        - name: http-scaling
+          http:
+            metadata:
+              concurrentRequests: "10"
+
+  secrets:
+    #- name: acr-password
+    #value:
