@@ -42,6 +42,7 @@ param enableAuthentication bool = false
 // Variables
 var serverAppName = '${prefix}-server'
 var webAppName = '${prefix}-web'
+var managementAppName = 'ccp4i2-bicep-management'
 
 // Existing resources
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -190,6 +191,153 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
           }
         ]
+      }
+      volumes: [
+        {
+          name: 'ccp4data-volume'
+          storageName: 'ccp4data-mount'
+          storageType: 'AzureFile'
+        }
+        {
+          name: 'staticfiles-volume'
+          storageName: 'staticfiles-mount'
+          storageType: 'AzureFile'
+        }
+        {
+          name: 'mediafiles-volume'
+          storageName: 'mediafiles-mount'
+          storageType: 'AzureFile'
+        }
+      ]
+    }
+  }
+}
+
+// Management Container App
+resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: managementAppName
+  location: resourceGroup().location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnvironmentId
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 8000
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: acrLoginServer
+          username: acrName
+          passwordSecretRef: 'registry-password'
+        }
+      ]
+      secrets: [
+        {
+          name: 'registry-password'
+          value: containerRegistry.listCredentials().passwords[0].value
+        }
+        {
+          name: 'db-password'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/database-admin-password'
+          identity: 'system'
+        }
+        {
+          name: 'django-secret-key'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
+          identity: 'system'
+        }
+        {
+          name: 'aad-client-secret'
+          value: aadClientSecret
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'management'
+          image: '${acrLoginServer}/ccp4i2/server:${imageTag}'
+          command: ['/bin/bash']
+          args: ['-c', 'while true; do echo "Management container active: $(date)"; sleep 300; done']
+          resources: {
+            cpu: json('0.5')
+            memory: '1.0Gi'
+          }
+          env: [
+            {
+              name: 'DJANGO_SETTINGS_MODULE'
+              value: 'ccp4x.config.settings'
+            }
+            {
+              name: 'DB_HOST'
+              value: postgresServerFqdn // Will resolve to private IP via private DNS zone
+            }
+            {
+              name: 'DB_PORT'
+              value: '5432'
+            }
+            {
+              name: 'DB_USER'
+              value: 'ccp4i2'
+            }
+            {
+              name: 'DB_NAME'
+              value: 'postgres'
+            }
+            {
+              name: 'DB_PASSWORD'
+              secretRef: 'db-password'
+            }
+            {
+              name: 'SECRET_KEY'
+              secretRef: 'django-secret-key'
+            }
+            {
+              name: 'DB_SSL_MODE'
+              value: 'require'
+            }
+            {
+              name: 'DB_SSL_ROOT_CERT'
+              value: 'true'
+            }
+            {
+              name: 'DB_SSL_REQUIRE_CERT'
+              value: 'false' // Private endpoint uses Azure's trusted certificates
+            }
+            {
+              name: 'CCP4_DATA_PATH'
+              value: '/mnt/ccp4data'
+            }
+            {
+              name: 'CCP4I2_PROJECTS_DIR'
+              value: '/mnt/ccp4data/ccp4i2-projects'
+            }
+          ]
+          volumeMounts: [
+            {
+              volumeName: 'ccp4data-volume'
+              mountPath: '/mnt/ccp4data'
+            }
+            {
+              volumeName: 'staticfiles-volume'
+              mountPath: '/mnt/staticfiles'
+            }
+            {
+              volumeName: 'mediafiles-volume'
+              mountPath: '/mnt/mediafiles'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 1
+        rules: []
       }
       volumes: [
         {
@@ -374,11 +522,28 @@ resource webAppAuth 'Microsoft.App/containerApps/authConfigs@2023-05-01' = if (e
 
 // Key Vault RBAC Role Assignment for Server App (Key Vault Secrets User)
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, serverApp.name, '4633458b-17de-408a-b874-0445c86b69e6')
+  name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22')
   scope: keyVault
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '4633458b-17de-408a-b874-0445c86b69e6'
+    ) // Key Vault Secrets User
     principalId: serverApp.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Key Vault RBAC Role Assignment for Management App (Key Vault Secrets User)
+resource keyVaultRoleAssignmentManagement 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22')
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '4633458b-17de-408a-b874-0445c86b69e6'
+    ) // Key Vault Secrets User
+    principalId: managementApp.identity.principalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -386,4 +551,6 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 // Outputs
 output serverUrl string = 'https://${serverApp.properties.configuration.ingress.fqdn}'
 output webUrl string = 'https://${webApp.properties.configuration.ingress.fqdn}'
+output managementAppName string = managementApp.name
 output serverPrincipalId string = serverApp.identity.principalId
+output managementPrincipalId string = managementApp.identity.principalId
