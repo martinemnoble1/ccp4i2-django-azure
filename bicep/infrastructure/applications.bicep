@@ -161,6 +161,10 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'CCP4I2_PROJECTS_DIR'
               value: '/mnt/ccp4data/ccp4i2-projects'
             }
+            {
+              name: 'ALLOWED_HOSTS'
+              value: '${prefix}-web.*.azurecontainerapps.io,${prefix}-server.*.azurecontainerapps.io,localhost,127.0.0.1,*'
+            }
           ]
           volumeMounts: [
             {
@@ -471,7 +475,7 @@ resource serverAppAuth 'Microsoft.App/containerApps/authConfigs@2023-05-01' = if
       enabled: true
     }
     globalValidation: {
-      unauthenticatedClientAction: 'RedirectToLoginPage'
+      unauthenticatedClientAction: 'AllowAnonymous'
     }
     identityProviders: {
       azureActiveDirectory: {
@@ -501,6 +505,14 @@ resource webAppAuth 'Microsoft.App/containerApps/authConfigs@2023-05-01' = if (e
     }
     globalValidation: {
       unauthenticatedClientAction: 'RedirectToLoginPage'
+      excludedPaths: [
+        '/api/proxy/*'
+        '/api/*'
+        '/_next/*'
+        '/favicon.ico'
+        '/RDKit_minimal.wasm'
+        '/static/*'
+      ]
     }
     identityProviders: {
       azureActiveDirectory: {
@@ -522,7 +534,7 @@ resource webAppAuth 'Microsoft.App/containerApps/authConfigs@2023-05-01' = if (e
 
 // Key Vault RBAC Role Assignment for Server App (Key Vault Secrets User)
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22')
+  name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22-v2')
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -536,7 +548,7 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 
 // Key Vault RBAC Role Assignment for Management App (Key Vault Secrets User)
 resource keyVaultRoleAssignmentManagement 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22')
+  name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22-v2')
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId(
