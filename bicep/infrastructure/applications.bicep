@@ -65,7 +65,7 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: true
+        external: false // Changed to internal only
         targetPort: 8000
         allowInsecure: false
         traffic: [
@@ -163,11 +163,11 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             {
               name: 'ALLOWED_HOSTS'
-              value: '${prefix}-web.*.azurecontainerapps.io,${prefix}-server.*.azurecontainerapps.io,localhost,127.0.0.1,*'
+              value: '${webAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1'
             }
             {
               name: 'CORS_ALLOWED_ORIGINS'
-              value: 'https://${prefix}-web.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              value: 'https://${webAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
               name: 'CORS_ALLOW_CREDENTIALS'
@@ -421,15 +421,15 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           env: [
             {
               name: 'BACKEND_URL'
-              value: 'https://${prefix}-server.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              value: 'https://${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
               name: 'NEXT_PUBLIC_API_URL'
-              value: 'https://${prefix}-server.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              value: 'https://${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
               name: 'API_BASE_URL'
-              value: 'https://${prefix}-server.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              value: 'https://${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
           ]
           volumeMounts: [
