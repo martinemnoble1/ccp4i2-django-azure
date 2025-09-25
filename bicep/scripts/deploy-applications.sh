@@ -57,10 +57,8 @@ az deployment group create \
                keyVaultName="$KEY_VAULT_NAME" \
                imageTag="${IMAGE_TAG:-latest}" \
                prefix=ccp4i2-bicep \
-               aadClientId="${AAD_CLIENT_ID:-}" \
-               aadClientSecret="${AAD_CLIENT_SECRET:-}" \
-               aadTenantId="${AAD_TENANT_ID:-}" \
-               enableAuthentication="${ENABLE_AUTHENTICATION:-false}" \
+               aadClientId="${NEXT_PUBLIC_AAD_CLIENT_ID:-}" \
+               aadTenantId="${NEXT_PUBLIC_AAD_TENANT_ID:-}" \
   --name $APP_DEPLOYMENT_NAME \
   --mode Incremental
 

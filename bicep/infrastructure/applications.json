@@ -1,0 +1,544 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.37.4.10188",
+      "templateHash": "15616436317453646685"
+    }
+  },
+  "parameters": {
+    "containerAppsEnvironmentId": {
+      "type": "string",
+      "metadata": {
+        "description": "Container Apps Environment ID"
+      }
+    },
+    "acrLoginServer": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Container Registry login server"
+      }
+    },
+    "acrName": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure Container Registry name"
+      }
+    },
+    "postgresServerFqdn": {
+      "type": "string",
+      "metadata": {
+        "description": "PostgreSQL server FQDN - will resolve to private IP via private DNS zone"
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "Key Vault name - accessed via private endpoint"
+      }
+    },
+    "imageTag": {
+      "type": "string",
+      "defaultValue": "latest",
+      "metadata": {
+        "description": "Container image tag"
+      }
+    },
+    "prefix": {
+      "type": "string",
+      "defaultValue": "ccp4i2-bicep",
+      "metadata": {
+        "description": "Resource naming prefix"
+      }
+    },
+    "aadClientId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD Client ID for frontend authentication"
+      }
+    },
+    "aadTenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure AD Tenant ID for frontend authentication"
+      }
+    }
+  },
+  "variables": {
+    "serverAppName": "[format('{0}-server', parameters('prefix'))]",
+    "webAppName": "[format('{0}-web', parameters('prefix'))]",
+    "managementAppName": "ccp4i2-bicep-management"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('serverAppName')]",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "managedEnvironmentId": "[parameters('containerAppsEnvironmentId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": false,
+            "targetPort": 8000,
+            "allowInsecure": false,
+            "traffic": [
+              {
+                "weight": 100,
+                "latestRevision": true
+              }
+            ]
+          },
+          "registries": [
+            {
+              "server": "[parameters('acrLoginServer')]",
+              "username": "[parameters('acrName')]",
+              "passwordSecretRef": "registry-password"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "registry-password",
+              "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-07-01').passwords[0].value]"
+            },
+            {
+              "name": "db-password",
+              "keyVaultUrl": "[format('{0}secrets/database-admin-password', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-02-01').vaultUri)]",
+              "identity": "system"
+            },
+            {
+              "name": "django-secret-key",
+              "keyVaultUrl": "[format('{0}secrets/django-secret-key', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-02-01').vaultUri)]",
+              "identity": "system"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "server",
+              "image": "[format('{0}/ccp4i2/server:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('2.0')]",
+                "memory": "4.0Gi"
+              },
+              "env": [
+                {
+                  "name": "DJANGO_SETTINGS_MODULE",
+                  "value": "ccp4x.config.settings"
+                },
+                {
+                  "name": "DB_HOST",
+                  "value": "[parameters('postgresServerFqdn')]"
+                },
+                {
+                  "name": "DB_PORT",
+                  "value": "5432"
+                },
+                {
+                  "name": "DB_USER",
+                  "value": "ccp4i2"
+                },
+                {
+                  "name": "DB_NAME",
+                  "value": "postgres"
+                },
+                {
+                  "name": "DB_PASSWORD",
+                  "secretRef": "db-password"
+                },
+                {
+                  "name": "SECRET_KEY",
+                  "secretRef": "django-secret-key"
+                },
+                {
+                  "name": "DB_SSL_MODE",
+                  "value": "require"
+                },
+                {
+                  "name": "DB_SSL_ROOT_CERT",
+                  "value": "true"
+                },
+                {
+                  "name": "DB_SSL_REQUIRE_CERT",
+                  "value": "false"
+                },
+                {
+                  "name": "CCP4_DATA_PATH",
+                  "value": "/mnt/ccp4data"
+                },
+                {
+                  "name": "CCP4I2_PROJECTS_DIR",
+                  "value": "/mnt/ccp4data/ccp4i2-projects"
+                },
+                {
+                  "name": "ALLOWED_HOSTS",
+                  "value": "[format('{0}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,{1}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1', variables('webAppName'), variables('serverAppName'))]"
+                },
+                {
+                  "name": "CORS_ALLOWED_ORIGINS",
+                  "value": "[format('https://{0}.whitecliff-258bc831.northeurope.azurecontainerapps.io', variables('webAppName'))]"
+                },
+                {
+                  "name": "CORS_ALLOW_CREDENTIALS",
+                  "value": "True"
+                }
+              ],
+              "volumeMounts": [
+                {
+                  "volumeName": "ccp4data-volume",
+                  "mountPath": "/mnt/ccp4data"
+                },
+                {
+                  "volumeName": "staticfiles-volume",
+                  "mountPath": "/mnt/staticfiles"
+                },
+                {
+                  "volumeName": "mediafiles-volume",
+                  "mountPath": "/mnt/mediafiles"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 10,
+            "rules": [
+              {
+                "name": "http-scaling",
+                "http": {
+                  "metadata": {
+                    "concurrentRequests": "100"
+                  }
+                }
+              }
+            ]
+          },
+          "volumes": [
+            {
+              "name": "ccp4data-volume",
+              "storageName": "ccp4data-mount",
+              "storageType": "AzureFile"
+            },
+            {
+              "name": "staticfiles-volume",
+              "storageName": "staticfiles-mount",
+              "storageType": "AzureFile"
+            },
+            {
+              "name": "mediafiles-volume",
+              "storageName": "mediafiles-mount",
+              "storageType": "AzureFile"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('managementAppName')]",
+      "location": "[resourceGroup().location]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "managedEnvironmentId": "[parameters('containerAppsEnvironmentId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": false,
+            "targetPort": 8000,
+            "allowInsecure": false
+          },
+          "registries": [
+            {
+              "server": "[parameters('acrLoginServer')]",
+              "username": "[parameters('acrName')]",
+              "passwordSecretRef": "registry-password"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "registry-password",
+              "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-07-01').passwords[0].value]"
+            },
+            {
+              "name": "db-password",
+              "keyVaultUrl": "[format('{0}secrets/database-admin-password', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-02-01').vaultUri)]",
+              "identity": "system"
+            },
+            {
+              "name": "django-secret-key",
+              "keyVaultUrl": "[format('{0}secrets/django-secret-key', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-02-01').vaultUri)]",
+              "identity": "system"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "management",
+              "image": "[format('{0}/ccp4i2/server:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+              "command": [
+                "/bin/bash"
+              ],
+              "args": [
+                "-c",
+                "while true; do echo \"Management container active: $(date)\"; sleep 300; done"
+              ],
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1.0Gi"
+              },
+              "env": [
+                {
+                  "name": "DJANGO_SETTINGS_MODULE",
+                  "value": "ccp4x.config.settings"
+                },
+                {
+                  "name": "DB_HOST",
+                  "value": "[parameters('postgresServerFqdn')]"
+                },
+                {
+                  "name": "DB_PORT",
+                  "value": "5432"
+                },
+                {
+                  "name": "DB_USER",
+                  "value": "ccp4i2"
+                },
+                {
+                  "name": "DB_NAME",
+                  "value": "postgres"
+                },
+                {
+                  "name": "DB_PASSWORD",
+                  "secretRef": "db-password"
+                },
+                {
+                  "name": "SECRET_KEY",
+                  "secretRef": "django-secret-key"
+                },
+                {
+                  "name": "DB_SSL_MODE",
+                  "value": "require"
+                },
+                {
+                  "name": "DB_SSL_ROOT_CERT",
+                  "value": "true"
+                },
+                {
+                  "name": "DB_SSL_REQUIRE_CERT",
+                  "value": "false"
+                },
+                {
+                  "name": "CCP4_DATA_PATH",
+                  "value": "/mnt/ccp4data"
+                },
+                {
+                  "name": "CCP4I2_PROJECTS_DIR",
+                  "value": "/mnt/ccp4data/ccp4i2-projects"
+                }
+              ],
+              "volumeMounts": [
+                {
+                  "volumeName": "ccp4data-volume",
+                  "mountPath": "/mnt/ccp4data"
+                },
+                {
+                  "volumeName": "staticfiles-volume",
+                  "mountPath": "/mnt/staticfiles"
+                },
+                {
+                  "volumeName": "mediafiles-volume",
+                  "mountPath": "/mnt/mediafiles"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 1,
+            "rules": []
+          },
+          "volumes": [
+            {
+              "name": "ccp4data-volume",
+              "storageName": "ccp4data-mount",
+              "storageType": "AzureFile"
+            },
+            {
+              "name": "staticfiles-volume",
+              "storageName": "staticfiles-mount",
+              "storageType": "AzureFile"
+            },
+            {
+              "name": "mediafiles-volume",
+              "storageName": "mediafiles-mount",
+              "storageType": "AzureFile"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('webAppName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "managedEnvironmentId": "[parameters('containerAppsEnvironmentId')]",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 3000,
+            "allowInsecure": false,
+            "traffic": [
+              {
+                "weight": 100,
+                "latestRevision": true
+              }
+            ]
+          },
+          "registries": [
+            {
+              "server": "[parameters('acrLoginServer')]",
+              "username": "[parameters('acrName')]",
+              "passwordSecretRef": "registry-password"
+            }
+          ],
+          "secrets": [
+            {
+              "name": "registry-password",
+              "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-07-01').passwords[0].value]"
+            }
+          ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "web",
+              "image": "[format('{0}/ccp4i2/web:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1.0Gi"
+              },
+              "env": [
+                {
+                  "name": "CORS_ALLOWED_ORIGINS",
+                  "value": "[format('https://{0}.whitecliff-258bc831.northeurope.azurecontainerapps.io', variables('webAppName'))]"
+                },
+                {
+                  "name": "NEXT_PUBLIC_API_BASE_URL",
+                  "value": "[format('https://{0}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io', variables('serverAppName'))]"
+                },
+                {
+                  "name": "NEXT_PUBLIC_AAD_CLIENT_ID",
+                  "value": "[parameters('aadClientId')]"
+                },
+                {
+                  "name": "NEXT_PUBLIC_AAD_TENANT_ID",
+                  "value": "[parameters('aadTenantId')]"
+                }
+              ],
+              "volumeMounts": [
+                {
+                  "volumeName": "staticfiles-volume",
+                  "mountPath": "/mnt/staticfiles"
+                },
+                {
+                  "volumeName": "mediafiles-volume",
+                  "mountPath": "/mnt/mediafiles"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 5,
+            "rules": [
+              {
+                "name": "http-scaling",
+                "http": {
+                  "metadata": {
+                    "concurrentRequests": "50"
+                  }
+                }
+              }
+            ]
+          },
+          "volumes": [
+            {
+              "name": "staticfiles-volume",
+              "storageName": "staticfiles-mount",
+              "storageType": "AzureFile"
+            },
+            {
+              "name": "mediafiles-volume",
+              "storageName": "mediafiles-mount",
+              "storageType": "AzureFile"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.KeyVault/vaults/{0}', parameters('keyVaultName'))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.App/containerApps', variables('serverAppName')), '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22-v2')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
+        "principalId": "[reference(resourceId('Microsoft.App/containerApps', variables('serverAppName')), '2023-05-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/containerApps', variables('serverAppName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.KeyVault/vaults/{0}', parameters('keyVaultName'))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), resourceId('Microsoft.App/containerApps', variables('managementAppName')), '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22-v2')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')]",
+        "principalId": "[reference(resourceId('Microsoft.App/containerApps', variables('managementAppName')), '2023-05-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/containerApps', variables('managementAppName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "serverUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', variables('serverAppName')), '2023-05-01').configuration.ingress.fqdn)]"
+    },
+    "webUrl": {
+      "type": "string",
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', variables('webAppName')), '2023-05-01').configuration.ingress.fqdn)]"
+    },
+    "managementAppName": {
+      "type": "string",
+      "value": "[variables('managementAppName')]"
+    },
+    "serverPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', variables('serverAppName')), '2023-05-01', 'full').identity.principalId]"
+    },
+    "managementPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.App/containerApps', variables('managementAppName')), '2023-05-01', 'full').identity.principalId]"
+    }
+  }
+}

@@ -11,14 +11,6 @@
     "aadClientId": {
       "value": "YOUR_AAD_CLIENT_ID"
     },
-    "aadClientSecret": {
-      "reference": {
-        "keyVault": {
-          "id": "/subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/YOUR_RESOURCE_GROUP/providers/Microsoft.KeyVault/vaults/YOUR_KEYVAULT_NAME"
-        },
-        "secretName": "aad-client-secret"
-      }
-    },
     "aadTenantId": {
       "value": "YOUR_AAD_TENANT_ID"
     }

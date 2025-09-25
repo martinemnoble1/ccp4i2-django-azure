@@ -19,18 +19,11 @@ param imageTag string = 'latest'
 @description('Resource naming prefix')
 param prefix string = 'ccp4i2-bicep'
 
-@description('Azure AD Client ID for authentication (optional)')
-param aadClientId string = ''
+@description('Azure AD Client ID for frontend authentication')
+param aadClientId string
 
-@description('Azure AD Client Secret for authentication (optional)')
-@secure()
-param aadClientSecret string = ''
-
-@description('Azure AD Tenant ID for authentication (optional)')
-param aadTenantId string = tenant().tenantId
-
-@description('Enable Azure AD authentication')
-param enableAuthentication bool = false
+@description('Azure AD Tenant ID for frontend authentication')
+param aadTenantId string
 
 // Note: This template is designed to work with private VNet architecture
 // - PostgreSQL is accessed via private endpoint (no public access)
@@ -96,10 +89,6 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'django-secret-key'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
           identity: 'system'
-        }
-        {
-          name: 'aad-client-secret'
-          value: aadClientSecret
         }
       ]
     }
@@ -263,10 +252,6 @@ resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
           identity: 'system'
         }
-        {
-          name: 'aad-client-secret'
-          value: aadClientSecret
-        }
       ]
     }
     template: {
@@ -403,10 +388,6 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'registry-password'
           value: containerRegistry.listCredentials().passwords[0].value
         }
-        {
-          name: 'aad-client-secret'
-          value: aadClientSecret
-        }
       ]
     }
     template: {
@@ -420,16 +401,20 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           }
           env: [
             {
-              name: 'BACKEND_URL'
+              name: 'CORS_ALLOWED_ORIGINS'
+              value: 'https://${webAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+            }
+            {
+              name: 'NEXT_PUBLIC_API_BASE_URL'
               value: 'https://${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
-              name: 'NEXT_PUBLIC_API_URL'
-              value: 'https://${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              name: 'NEXT_PUBLIC_AAD_CLIENT_ID'
+              value: aadClientId
             }
             {
-              name: 'API_BASE_URL'
-              value: 'https://${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              name: 'NEXT_PUBLIC_AAD_TENANT_ID'
+              value: aadTenantId
             }
           ]
           volumeMounts: [
@@ -474,84 +459,9 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
   }
 }
 
-// Authentication configuration for Server App
-resource serverAppAuth 'Microsoft.App/containerApps/authConfigs@2023-05-01' = if (enableAuthentication) {
-  name: 'current'
-  parent: serverApp
-  properties: {
-    platform: {
-      enabled: true
-    }
-    globalValidation: {
-      unauthenticatedClientAction: 'AllowAnonymous'
-    }
-    identityProviders: {
-      azureActiveDirectory: {
-        enabled: true
-        registration: {
-          clientId: aadClientId
-          clientSecretSettingName: 'aad-client-secret'
-          openIdIssuer: '${environment().authentication.loginEndpoint}${aadTenantId}/v2.0'
-        }
-        validation: {
-          allowedAudiences: [
-            aadClientId
-          ]
-        }
-      }
-    }
-  }
-}
+// Authentication configuration for Server App removed - authentication now handled in frontend
 
-// Authentication configuration for Web App
-resource webAppAuth 'Microsoft.App/containerApps/authConfigs@2023-05-01' = if (enableAuthentication) {
-  name: 'current'
-  parent: webApp
-  properties: {
-    platform: {
-      enabled: true
-    }
-    globalValidation: {
-      unauthenticatedClientAction: 'RedirectToLoginPage'
-      excludedPaths: [
-        '/api/proxy/*'
-        '/api/*'
-        '/_next/*'
-        '/favicon.ico'
-        '/RDKit_minimal.wasm'
-        '/static/*'
-        '/_vercel/*'
-        '/manifest.json'
-        '/*.js'
-        '/*.css'
-        '/*.woff*'
-        '/*.ttf'
-        '/*.otf'
-        '/*.png'
-        '/*.jpg'
-        '/*.jpeg'
-        '/*.gif'
-        '/*.svg'
-        '/*.ico'
-      ]
-    }
-    identityProviders: {
-      azureActiveDirectory: {
-        enabled: true
-        registration: {
-          clientId: aadClientId
-          clientSecretSettingName: 'aad-client-secret'
-          openIdIssuer: '${environment().authentication.loginEndpoint}${aadTenantId}/v2.0'
-        }
-        validation: {
-          allowedAudiences: [
-            aadClientId
-          ]
-        }
-      }
-    }
-  }
-}
+// Authentication configuration for Web App removed - authentication now handled in frontend
 
 // Key Vault RBAC Role Assignment for Server App (Key Vault Secrets User)
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
