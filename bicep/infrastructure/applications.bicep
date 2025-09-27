@@ -58,9 +58,9 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
-        external: false // Changed to internal only
+        external: true // Changed to allow browser access
         targetPort: 8000
-        allowInsecure: false
+        allowInsecure: true // Allow HTTP for internal VNet communication
         traffic: [
           {
             weight: 100
@@ -101,6 +101,47 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
             cpu: json('2.0')
             memory: '4.0Gi'
           }
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/health/'
+                port: 8000
+                host: 'localhost'
+              }
+              initialDelaySeconds: 120 // Increased from 30 to 120 seconds
+              periodSeconds: 60 // Check less frequently
+              failureThreshold: 3
+              successThreshold: 1
+              timeoutSeconds: 10 // Add timeout for slow responses
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/health/'
+                port: 8000
+                host: 'localhost'
+              }
+              initialDelaySeconds: 60
+              periodSeconds: 30
+              failureThreshold: 3
+              successThreshold: 1
+              timeoutSeconds: 10
+            }
+            {
+              type: 'Startup'
+              httpGet: {
+                path: '/health/'
+                port: 8000
+                host: 'localhost'
+              }
+              initialDelaySeconds: 180 // 3 minutes for very slow Django startups
+              periodSeconds: 30
+              failureThreshold: 10 // Allow more failures during startup
+              successThreshold: 1
+              timeoutSeconds: 10
+            }
+          ]
           env: [
             {
               name: 'DJANGO_SETTINGS_MODULE'
@@ -152,7 +193,7 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             {
               name: 'ALLOWED_HOSTS'
-              value: '${webAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1'
+              value: '${webAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName},${webAppName},localhost,127.0.0.1,0.0.0.0,*'
             }
             {
               name: 'CORS_ALLOWED_ORIGINS'
@@ -180,14 +221,14 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
         }
       ]
       scale: {
-        minReplicas: 1
+        minReplicas: 2
         maxReplicas: 10
         rules: [
           {
             name: 'http-scaling'
             http: {
               metadata: {
-                concurrentRequests: '100'
+                concurrentRequests: '10'
               }
             }
           }
@@ -401,12 +442,12 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           }
           env: [
             {
-              name: 'CORS_ALLOWED_ORIGINS'
-              value: 'https://${webAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              name: 'NEXT_PUBLIC_API_BASE_URL'
+              value: 'https://${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
-              name: 'NEXT_PUBLIC_API_BASE_URL'
-              value: 'https://${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              name: 'API_BASE_URL'
+              value: 'https://${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
               name: 'NEXT_PUBLIC_AAD_CLIENT_ID'
@@ -465,7 +506,7 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
 
 // Key Vault RBAC Role Assignment for Server App (Key Vault Secrets User)
 resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22-v2')
+  name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-26-v1')
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId(
@@ -479,7 +520,7 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 
 // Key Vault RBAC Role Assignment for Management App (Key Vault Secrets User)
 resource keyVaultRoleAssignmentManagement 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-22-v2')
+  name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-26-v1')
   scope: keyVault
   properties: {
     roleDefinitionId: subscriptionResourceId(

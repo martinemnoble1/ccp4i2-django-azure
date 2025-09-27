@@ -24,19 +24,19 @@ echo -e "${GREEN}🚀 Deploying Container Apps${NC}"
 # Get infrastructure outputs
 CONTAINER_APPS_ENV_ID=$(az deployment group show \
   --resource-group $RESOURCE_GROUP \
-  --name $(az deployment group list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'infrastructure')].name | [0]" -o tsv) \
+  --name $(az deployment group list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'infrastructure')].name" -o tsv | sort | tail -1) \
   --query properties.outputs.containerAppsEnvironmentId.value \
   --output tsv)
 
 POSTGRES_FQDN=$(az deployment group show \
   --resource-group $RESOURCE_GROUP \
-  --name $(az deployment group list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'infrastructure')].name | [0]" -o tsv) \
+  --name $(az deployment group list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'infrastructure')].name" -o tsv | sort | tail -1) \
   --query properties.outputs.postgresServerFqdn.value \
   --output tsv)
 
 KEY_VAULT_NAME=$(az deployment group show \
   --resource-group $RESOURCE_GROUP \
-  --name $(az deployment group list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'infrastructure')].name | [0]" -o tsv) \
+  --name $(az deployment group list --resource-group $RESOURCE_GROUP --query "[?contains(name, 'infrastructure')].name" -o tsv | sort | tail -1) \
   --query properties.outputs.keyVaultName.value \
   --output tsv)
 

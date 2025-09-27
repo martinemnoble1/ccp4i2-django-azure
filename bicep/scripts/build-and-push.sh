@@ -1,6 +1,10 @@
 #!/bin/bash
 
 # Docker Build and Push Script
+# Usage: ./build-and-push.sh [server|web]
+#   - No argument: Build both server and web images (default)
+#   - server: Build only server image
+#   - web: Build only web image
 
 # Ensure Homebrew paths are available
 export PATH="/opt/homebrew/bin:$PATH"
@@ -49,6 +53,29 @@ for dir in "${POSSIBLE_DIRS[@]}"; do
         break
     fi
 done
+
+# Parse command line arguments
+BUILD_SERVER=true
+BUILD_WEB=true
+
+if [ $# -gt 0 ]; then
+    case "$1" in
+        "server")
+            BUILD_WEB=false
+            echo -e "${YELLOW}🔧 Building server image only${NC}"
+            ;;
+        "web")
+            BUILD_SERVER=false
+            echo -e "${YELLOW}🔧 Building web image only${NC}"
+            ;;
+        *)
+            echo -e "${RED}❌ Invalid argument. Use 'server', 'web', or no argument for both${NC}"
+            exit 1
+            ;;
+    esac
+else
+    echo -e "${YELLOW}🔧 Building both server and web images${NC}"
+fi
 
 echo -e "${GREEN}🐳 Building and pushing Docker images${NC}"
 echo -e "${YELLOW}📁 Working directory: $WORKING_DIR${NC}"
@@ -136,38 +163,51 @@ echo -e "${GREEN}✅ ACR login successful${NC}"
 IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
 
 # Build and push images
-echo -e "${YELLOW}🔨 Building server image...${NC}"
-az acr build \
-  --registry $ACR_NAME \
-  --image ccp4i2/server:$IMAGE_TAG \
-  --image ccp4i2/server:latest \
-  --file Docker/Dockerfile.server \
-  ./server
+if [ "$BUILD_SERVER" = true ]; then
+    echo -e "${YELLOW}🔨 Building server image...${NC}"
+    az acr build \
+      --registry $ACR_NAME \
+      --image ccp4i2/server:$IMAGE_TAG \
+      --image ccp4i2/server:latest \
+      --file Docker/Dockerfile.server \
+      ./server
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Failed to build server image${NC}"
-    exit 1
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Failed to build server image${NC}"
+        exit 1
+    fi
 fi
 
-echo -e "${YELLOW}🔨 Building web image...${NC}"
-az acr build \
-  --registry $ACR_NAME \
-  --image ccp4i2/web:$IMAGE_TAG \
-  --image ccp4i2/web:latest \
-  --file Docker/Dockerfile.web \
-  --build-arg NEXT_PUBLIC_AAD_CLIENT_ID=$NEXT_PUBLIC_AAD_CLIENT_ID \
-  --build-arg NEXT_PUBLIC_AAD_TENANT_ID=$NEXT_PUBLIC_AAD_TENANT_ID \
-  ./client
+if [ "$BUILD_WEB" = true ]; then
+    echo -e "${YELLOW}🔨 Building web image...${NC}"
+    az acr build \
+      --registry $ACR_NAME \
+      --image ccp4i2/web:$IMAGE_TAG \
+      --image ccp4i2/web:latest \
+      --file Docker/Dockerfile.web \
+      --build-arg NEXT_PUBLIC_AAD_CLIENT_ID=$NEXT_PUBLIC_AAD_CLIENT_ID \
+      --build-arg NEXT_PUBLIC_AAD_TENANT_ID=$NEXT_PUBLIC_AAD_TENANT_ID \
+      ./client
 
-if [ $? -ne 0 ]; then
-    echo -e "${RED}❌ Failed to build web image${NC}"
-    exit 1
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Failed to build web image${NC}"
+        exit 1
+    fi
 fi
 
 # Note: nginx is not used in Container Apps architecture (built-in ingress)
 
-# Update environment file with image tag (save back to bicep directory)
-echo "IMAGE_TAG=$IMAGE_TAG" >> "$BICEP_DIR/.env.deployment"
+# Update environment file with image tag only if both images were built
+if [ "$BUILD_SERVER" = true ] && [ "$BUILD_WEB" = true ]; then
+    echo "IMAGE_TAG=$IMAGE_TAG" >> "$BICEP_DIR/.env.deployment"
+    echo -e "${YELLOW}📝 Updated .env.deployment with new image tag: $IMAGE_TAG${NC}"
+elif [ "$BUILD_SERVER" = true ]; then
+    echo -e "${YELLOW}⚠️  Server image built but .env.deployment not updated (web image not built)${NC}"
+    echo -e "${YELLOW}💡 To deploy, ensure both images have the same tag or build both together${NC}"
+elif [ "$BUILD_WEB" = true ]; then
+    echo -e "${YELLOW}⚠️  Web image built but .env.deployment not updated (server image not built)${NC}"
+    echo -e "${YELLOW}💡 To deploy, ensure both images have the same tag or build both together${NC}"
+fi
 
 # Restore original ACR network default action
 echo -e "${YELLOW}🔧 Restoring ACR network security settings...${NC}"
@@ -186,9 +226,16 @@ fi
 # (Note: This will block access for other IPs, keeping only the firewall allow list)
 # az acr update --name $ACR_NAME --public-network-enabled false
 
-echo -e "${GREEN}✅ All images built and pushed successfully${NC}"
+echo -e "${GREEN}✅ Images built and pushed successfully${NC}"
 echo -e "${YELLOW}📝 Image tag: $IMAGE_TAG${NC}"
-echo -e "${YELLOW}🔐 Security: ACR public access enabled with IP firewall restrictions${NC}"
+
+if [ "$BUILD_SERVER" = true ] && [ "$BUILD_WEB" = true ]; then
+    echo -e "${YELLOW}🔐 Security: ACR public access enabled with IP firewall restrictions${NC}"
+elif [ "$BUILD_SERVER" = true ]; then
+    echo -e "${YELLOW}🔐 Built: Server image${NC}"
+elif [ "$BUILD_WEB" = true ]; then
+    echo -e "${YELLOW}🔐 Built: Web image${NC}"
+fi
 
 # Display current ACR network configuration
 echo -e "${YELLOW}📋 Current ACR network configuration:${NC}"

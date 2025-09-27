@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "15616436317453646685"
+      "templateHash": "2665144718865891922"
     }
   },
   "parameters": {
@@ -85,7 +85,7 @@
         "configuration": {
           "activeRevisionsMode": "Single",
           "ingress": {
-            "external": false,
+            "external": true,
             "targetPort": 8000,
             "allowInsecure": false,
             "traffic": [
@@ -179,7 +179,7 @@
                 },
                 {
                   "name": "ALLOWED_HOSTS",
-                  "value": "[format('{0}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,{1}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1', variables('webAppName'), variables('serverAppName'))]"
+                  "value": "[format('{0}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,{1}.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1', variables('webAppName'), variables('serverAppName'))]"
                 },
                 {
                   "name": "CORS_ALLOWED_ORIGINS",
@@ -438,7 +438,7 @@
                 },
                 {
                   "name": "NEXT_PUBLIC_API_BASE_URL",
-                  "value": "[format('https://{0}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io', variables('serverAppName'))]"
+                  "value": "[format('https://{0}.whitecliff-258bc831.northeurope.azurecontainerapps.io', variables('serverAppName'))]"
                 },
                 {
                   "name": "NEXT_PUBLIC_AAD_CLIENT_ID",
