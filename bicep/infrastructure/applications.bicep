@@ -25,7 +25,6 @@ param aadClientId string
 @description('Azure AD Tenant ID for frontend authentication')
 param aadTenantId string
 
-// Note: This template is designed to work with private VNet architecture
 // - PostgreSQL is accessed via private endpoint (no public access)
 // - Key Vault is accessed via private endpoint (no public access)
 // - Storage Account is accessed via private endpoint (no public access)
@@ -109,7 +108,7 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
                 port: 8000
                 host: 'localhost'
               }
-              initialDelaySeconds: 120 // Increased from 30 to 120 seconds
+              initialDelaySeconds: 60 // Reduced from 120 to comply with Azure limits (max 60)
               periodSeconds: 60 // Check less frequently
               failureThreshold: 3
               successThreshold: 1
@@ -135,7 +134,7 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
                 port: 8000
                 host: 'localhost'
               }
-              initialDelaySeconds: 180 // 3 minutes for very slow Django startups
+              initialDelaySeconds: 60 // Reduced from 180 to comply with Azure limits (max 60) - Django should start within 60 seconds
               periodSeconds: 30
               failureThreshold: 10 // Allow more failures during startup
               successThreshold: 1
@@ -505,36 +504,36 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
 // Authentication configuration for Web App removed - authentication now handled in frontend
 
 // Key Vault RBAC Role Assignment for Server App (Key Vault Secrets User)
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-26-v1')
-  scope: keyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      '4633458b-17de-408a-b874-0445c86b69e6'
-    ) // Key Vault Secrets User
-    principalId: serverApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// NOTE: Role assignments are handled separately to avoid conflicts on redeployment
+// resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', roleAssignmentSuffix)
+//   scope: keyVault
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId(
+//       'Microsoft.Authorization/roleDefinitions',
+//       '4633458b-17de-408a-b874-0445c86b69e6'
+//     ) // Key Vault Secrets User
+//     principalId: serverApp.identity.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+// }
 
 // Key Vault RBAC Role Assignment for Management App (Key Vault Secrets User)
-resource keyVaultRoleAssignmentManagement 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', '2025-09-26-v1')
-  scope: keyVault
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      '4633458b-17de-408a-b874-0445c86b69e6'
-    ) // Key Vault Secrets User
-    principalId: managementApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
+// NOTE: Role assignments are handled separately to avoid conflicts on redeployment
+// resource keyVaultRoleAssignmentManagement 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', roleAssignmentSuffix)
+//   scope: keyVault
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId(
+//       'Microsoft.Authorization/roleDefinitions',
+//       '4633458b-17de-408a-b874-0445c86b69e6'
+//     ) // Key Vault Secrets User
+//     principalId: managementApp.identity.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+// }
 
 // Outputs
 output serverUrl string = 'https://${serverApp.properties.configuration.ingress.fqdn}'
 output webUrl string = 'https://${webApp.properties.configuration.ingress.fqdn}'
 output managementAppName string = managementApp.name
-output serverPrincipalId string = serverApp.identity.principalId
-output managementPrincipalId string = managementApp.identity.principalId
