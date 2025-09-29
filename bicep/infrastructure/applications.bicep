@@ -34,6 +34,7 @@ param aadTenantId string
 // Variables
 var serverAppName = '${prefix}-server'
 var webAppName = '${prefix}-web'
+var workerAppName = '${prefix}-worker'
 var managementAppName = 'ccp4i2-bicep-management'
 
 // Existing resources
@@ -397,6 +398,179 @@ resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
   }
 }
 
+// Worker Container App
+resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: workerAppName
+  location: resourceGroup().location
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnvironmentId
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false // Internal only - no external access needed
+        targetPort: 8000
+        allowInsecure: false
+      }
+      registries: [
+        {
+          server: acrLoginServer
+          username: acrName
+          passwordSecretRef: 'registry-password'
+        }
+      ]
+      secrets: [
+        {
+          name: 'registry-password'
+          value: containerRegistry.listCredentials().passwords[0].value
+        }
+        {
+          name: 'db-password'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/database-admin-password'
+          identity: 'system'
+        }
+        {
+          name: 'django-secret-key'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
+          identity: 'system'
+        }
+        {
+          name: 'servicebus-connection'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/servicebus-connection'
+          identity: 'system'
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'worker'
+          image: '${acrLoginServer}/ccp4i2/server:${imageTag}'
+          command: ['/usr/src/app/startup-worker.sh'] // Use worker startup script instead of Django server
+          resources: {
+            cpu: json('1.0')
+            memory: '2.0Gi'
+          }
+          env: [
+            {
+              name: 'DJANGO_SETTINGS_MODULE'
+              value: 'ccp4x.config.settings'
+            }
+            {
+              name: 'DB_HOST'
+              value: postgresServerFqdn
+            }
+            {
+              name: 'DB_PORT'
+              value: '5432'
+            }
+            {
+              name: 'DB_USER'
+              value: 'ccp4i2'
+            }
+            {
+              name: 'DB_NAME'
+              value: 'postgres'
+            }
+            {
+              name: 'DB_PASSWORD'
+              secretRef: 'db-password'
+            }
+            {
+              name: 'SECRET_KEY'
+              secretRef: 'django-secret-key'
+            }
+            {
+              name: 'DB_SSL_MODE'
+              value: 'require'
+            }
+            {
+              name: 'DB_SSL_ROOT_CERT'
+              value: 'true'
+            }
+            {
+              name: 'DB_SSL_REQUIRE_CERT'
+              value: 'false'
+            }
+            {
+              name: 'CCP4_DATA_PATH'
+              value: '/mnt/ccp4data'
+            }
+            {
+              name: 'CCP4I2_PROJECTS_DIR'
+              value: '/mnt/ccp4data/ccp4i2-projects'
+            }
+            {
+              name: 'SERVICE_BUS_CONNECTION_STRING'
+              secretRef: 'servicebus-connection'
+            }
+            {
+              name: 'SERVICE_BUS_QUEUE_NAME'
+              value: '${prefix}-jobs'
+            }
+          ]
+          volumeMounts: [
+            {
+              volumeName: 'ccp4data-volume'
+              mountPath: '/mnt/ccp4data'
+            }
+            {
+              volumeName: 'staticfiles-volume'
+              mountPath: '/mnt/staticfiles'
+            }
+            {
+              volumeName: 'mediafiles-volume'
+              mountPath: '/mnt/mediafiles'
+            }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 0 // Scale to zero when no jobs
+        maxReplicas: 5
+        rules: [
+          {
+            name: 'queue-scaling'
+            custom: {
+              type: 'azure-servicebus'
+              metadata: {
+                queueName: '${prefix}-jobs'
+                namespace: '${prefix}-servicebus'
+                messageCount: '5' // Scale up when 5+ messages in queue
+              }
+              auth: [
+                {
+                  secretRef: 'servicebus-connection'
+                  triggerParameter: 'connection'
+                }
+              ]
+            }
+          }
+        ]
+      }
+      volumes: [
+        {
+          name: 'ccp4data-volume'
+          storageName: 'ccp4data-mount'
+          storageType: 'AzureFile'
+        }
+        {
+          name: 'staticfiles-volume'
+          storageName: 'staticfiles-mount'
+          storageType: 'AzureFile'
+        }
+        {
+          name: 'mediafiles-volume'
+          storageName: 'mediafiles-mount'
+          storageType: 'AzureFile'
+        }
+      ]
+    }
+  }
+}
+
 // Web Container App
 resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: webAppName
@@ -518,17 +692,17 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
 //   }
 // }
 
-// Key Vault RBAC Role Assignment for Management App (Key Vault Secrets User)
+// Key Vault RBAC Role Assignment for Worker App (Key Vault Secrets User)
 // NOTE: Role assignments are handled separately to avoid conflicts on redeployment
-// resource keyVaultRoleAssignmentManagement 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-//   name: guid(keyVault.id, managementApp.id, '4633458b-17de-408a-b874-0445c86b69e6', roleAssignmentSuffix)
+// resource keyVaultRoleAssignmentWorker 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(keyVault.id, workerApp.id, '4633458b-17de-408a-b874-0445c86b69e6', roleAssignmentSuffix)
 //   scope: keyVault
 //   properties: {
 //     roleDefinitionId: subscriptionResourceId(
 //       'Microsoft.Authorization/roleDefinitions',
 //       '4633458b-17de-408a-b874-0445c86b69e6'
 //     ) // Key Vault Secrets User
-//     principalId: managementApp.identity.principalId
+//     principalId: workerApp.identity.principalId
 //     principalType: 'ServicePrincipal'
 //   }
 // }
@@ -537,3 +711,4 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
 output serverUrl string = 'https://${serverApp.properties.configuration.ingress.fqdn}'
 output webUrl string = 'https://${webApp.properties.configuration.ingress.fqdn}'
 output managementAppName string = managementApp.name
+output workerAppName string = workerApp.name
