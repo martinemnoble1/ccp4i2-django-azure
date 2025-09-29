@@ -116,18 +116,21 @@ echo -e "${GREEN}✅ Source data found: ${SOURCE_SIZE_GB}GB${NC}"
 echo -e "${YELLOW}🔄 Starting data copy operation...${NC}"
 echo "This may take some time depending on the amount of data (~12GB for CCP4)"
 
-# Use azcopy for efficient copying
-echo -e "${BLUE}📋 Copy command (you can monitor this separately):${NC}"
-echo "azcopy copy 'https://${SOURCE_STORAGE_ACCOUNT}.file.core.windows.net/${SOURCE_SHARE_NAME}?${SOURCE_SAS}' 'https://${BACKUP_STORAGE_ACCOUNT}.file.core.windows.net/${BACKUP_SHARE_NAME}?${BACKUP_SAS}' --recursive"
+echo "Copy operation completed!"
+echo -e "${BLUE}🚀 Starting copy operation...${NC}"
 
-# Generate SAS tokens for azcopy
-echo -e "${YELLOW}🔐 Generating SAS tokens for copy operation...${NC}"
+echo -e "${YELLOW}🔐 Generating SAS tokens for azcopy...${NC}"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  SAS_EXPIRY=$(date -u -v+2H '+%Y-%m-%dT%H:%MZ')
+else
+  SAS_EXPIRY=$(date -u -d '+2 hours' '+%Y-%m-%dT%H:%MZ')
+fi
 SOURCE_SAS=$(${AZ_CLI} storage share generate-sas \
   --name $SOURCE_SHARE_NAME \
   --account-name $SOURCE_STORAGE_ACCOUNT \
   --account-key $SOURCE_KEY \
   --permissions rl \
-  --expiry $(date -u -d '+2 hours' '+%Y-%m-%dT%H:%MZ') \
+  --expiry "$SAS_EXPIRY" \
   --output tsv)
 
 BACKUP_SAS=$(${AZ_CLI} storage share generate-sas \
@@ -135,81 +138,26 @@ BACKUP_SAS=$(${AZ_CLI} storage share generate-sas \
   --account-name $BACKUP_STORAGE_ACCOUNT \
   --account-key $BACKUP_KEY \
   --permissions rwl \
-  --expiry $(date -u -d '+2 hours' '+%Y-%m-%dT%H:%MZ') \
+  --expiry "$SAS_EXPIRY" \
   --output tsv)
 
-# Alternative: Use Azure CLI for copying (slower but more reliable for some scenarios)
-echo -e "${YELLOW}🔄 Using Azure CLI to copy files...${NC}"
-echo "This approach is more reliable but may be slower than azcopy"
-
-# Create a temporary script for the copy operation
-cat > /tmp/copy-ccp4-data.sh << 'EOF'
-#!/bin/bash
-set -e
-
-AZ_CLI="/opt/homebrew/bin/az"
-if [ ! -f "$AZ_CLI" ]; then
-    AZ_CLI="az"
+if [ -z "$SOURCE_SAS" ] || [ -z "$BACKUP_SAS" ]; then
+  echo -e "${RED}❌ Failed to generate SAS tokens. Aborting backup.${NC}"
+  exit 1
 fi
 
-SOURCE_RG="$1"
-SOURCE_STORAGE="$2"
-SOURCE_SHARE="$3"
-BACKUP_RG="$4"
-BACKUP_STORAGE="$5"
-BACKUP_SHARE="$6"
+echo -e "${YELLOW}🚀 Starting azcopy recursive copy...${NC}"
+AZCOPY_PATH=$(command -v azcopy)
+if [ -z "$AZCOPY_PATH" ]; then
+  echo -e "${RED}❌ azcopy not found. Please install azcopy: https://aka.ms/azcopy${NC}"
+  exit 1
+fi
 
-echo "Starting recursive copy from $SOURCE_STORAGE/$SOURCE_SHARE to $BACKUP_STORAGE/$BACKUP_SHARE"
+SRC_URL="https://${SOURCE_STORAGE_ACCOUNT}.file.core.windows.net/${SOURCE_SHARE_NAME}?${SOURCE_SAS}"
+DST_URL="https://${BACKUP_STORAGE_ACCOUNT}.file.core.windows.net/${BACKUP_SHARE_NAME}?${BACKUP_SAS}"
 
-# Get a list of all files to copy
-echo "Scanning source files..."
-${AZ_CLI} storage file list \
-  --share-name $SOURCE_SHARE \
-  --account-name $SOURCE_STORAGE \
-  --recursive \
-  --output tsv \
-  --query '[].name' > /tmp/file_list.txt
-
-TOTAL_FILES=$(wc -l < /tmp/file_list.txt)
-echo "Found $TOTAL_FILES files to copy"
-
-COUNTER=0
-while IFS= read -r file; do
-    COUNTER=$((COUNTER + 1))
-    echo "[$COUNTER/$TOTAL_FILES] Copying: $file"
-    
-    # Create directory structure in destination if needed
-    DIR=$(dirname "$file")
-    if [ "$DIR" != "." ]; then
-        ${AZ_CLI} storage directory create \
-          --share-name $BACKUP_SHARE \
-          --account-name $BACKUP_STORAGE \
-          --name "$DIR" \
-          --fail-on-exist false >/dev/null 2>&1 || true
-    fi
-    
-    # Copy the file
-    ${AZ_CLI} storage file copy start \
-      --source-account-name $SOURCE_STORAGE \
-      --source-share $SOURCE_SHARE \
-      --source-path "$file" \
-      --destination-account-name $BACKUP_STORAGE \
-      --destination-share $BACKUP_SHARE \
-      --destination-path "$file"
-      
-    if [ $((COUNTER % 10)) -eq 0 ]; then
-        echo "Progress: $COUNTER/$TOTAL_FILES files copied"
-    fi
-done < /tmp/file_list.txt
-
-echo "Copy operation completed!"
-rm -f /tmp/file_list.txt
-EOF
-
-chmod +x /tmp/copy-ccp4-data.sh
-
-echo -e "${BLUE}🚀 Starting copy operation...${NC}"
-/tmp/copy-ccp4-data.sh "$SOURCE_RG" "$SOURCE_STORAGE_ACCOUNT" "$SOURCE_SHARE_NAME" "$BACKUP_RG" "$BACKUP_STORAGE_ACCOUNT" "$BACKUP_SHARE_NAME"
+echo "azcopy copy '$SRC_URL' '$DST_URL' --recursive=true"
+$AZCOPY_PATH copy "$SRC_URL" "$DST_URL" --recursive=true
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Backup completed successfully!${NC}"

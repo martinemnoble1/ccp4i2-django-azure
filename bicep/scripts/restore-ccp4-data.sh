@@ -124,74 +124,48 @@ echo -e "${GREEN}✅ Backup data size: ${BACKUP_SIZE_GB}GB${NC}"
 echo -e "${YELLOW}🔄 Starting data restore operation...${NC}"
 echo "This may take some time depending on the amount of data (~12GB for CCP4)"
 
-# Create a temporary script for the restore operation
-cat > /tmp/restore-ccp4-data.sh << 'EOF'
-#!/bin/bash
-set -e
+echo "Restore operation completed!"
+echo -e "${BLUE}🚀 Starting restore operation...${NC}"
 
-AZ_CLI="/opt/homebrew/bin/az"
-if [ ! -f "$AZ_CLI" ]; then
-    AZ_CLI="az"
+echo -e "${YELLOW}🔐 Generating SAS tokens for azcopy...${NC}"
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    SAS_EXPIRY=$(date -u -v+2H '+%Y-%m-%dT%H:%MZ')
+else
+    SAS_EXPIRY=$(date -u -d '+2 hours' '+%Y-%m-%dT%H:%MZ')
+fi
+BACKUP_SAS=$(${AZ_CLI} storage share generate-sas \
+    --name $BACKUP_SHARE_NAME \
+    --account-name $BACKUP_STORAGE_ACCOUNT \
+    --account-key $BACKUP_KEY \
+    --permissions rl \
+    --expiry "$SAS_EXPIRY" \
+    --output tsv)
+
+TARGET_SAS=$(${AZ_CLI} storage share generate-sas \
+    --name $TARGET_SHARE_NAME \
+    --account-name $TARGET_STORAGE_ACCOUNT \
+    --account-key $TARGET_KEY \
+    --permissions rwl \
+    --expiry "$SAS_EXPIRY" \
+    --output tsv)
+
+if [ -z "$BACKUP_SAS" ] || [ -z "$TARGET_SAS" ]; then
+    echo -e "${RED}❌ Failed to generate SAS tokens. Aborting restore.${NC}"
+    exit 1
 fi
 
-BACKUP_RG="$1"
-BACKUP_STORAGE="$2"
-BACKUP_SHARE="$3"
-TARGET_RG="$4"
-TARGET_STORAGE="$5"
-TARGET_SHARE="$6"
+echo -e "${YELLOW}🚀 Starting azcopy recursive restore...${NC}"
+AZCOPY_PATH=$(command -v azcopy)
+if [ -z "$AZCOPY_PATH" ]; then
+    echo -e "${RED}❌ azcopy not found. Please install azcopy: https://aka.ms/azcopy${NC}"
+    exit 1
+fi
 
-echo "Starting recursive restore from $BACKUP_STORAGE/$BACKUP_SHARE to $TARGET_STORAGE/$TARGET_SHARE"
+SRC_URL="https://${BACKUP_STORAGE_ACCOUNT}.file.core.windows.net/${BACKUP_SHARE_NAME}?${BACKUP_SAS}"
+DST_URL="https://${TARGET_STORAGE_ACCOUNT}.file.core.windows.net/${TARGET_SHARE_NAME}?${TARGET_SAS}"
 
-# Get a list of all files to restore
-echo "Scanning backup files..."
-${AZ_CLI} storage file list \
-  --share-name $BACKUP_SHARE \
-  --account-name $BACKUP_STORAGE \
-  --recursive \
-  --output tsv \
-  --query '[].name' > /tmp/restore_file_list.txt
-
-TOTAL_FILES=$(wc -l < /tmp/restore_file_list.txt)
-echo "Found $TOTAL_FILES files to restore"
-
-COUNTER=0
-while IFS= read -r file; do
-    COUNTER=$((COUNTER + 1))
-    echo "[$COUNTER/$TOTAL_FILES] Restoring: $file"
-    
-    # Create directory structure in destination if needed
-    DIR=$(dirname "$file")
-    if [ "$DIR" != "." ]; then
-        ${AZ_CLI} storage directory create \
-          --share-name $TARGET_SHARE \
-          --account-name $TARGET_STORAGE \
-          --name "$DIR" \
-          --fail-on-exist false >/dev/null 2>&1 || true
-    fi
-    
-    # Copy the file
-    ${AZ_CLI} storage file copy start \
-      --source-account-name $BACKUP_STORAGE \
-      --source-share $BACKUP_SHARE \
-      --source-path "$file" \
-      --destination-account-name $TARGET_STORAGE \
-      --destination-share $TARGET_SHARE \
-      --destination-path "$file"
-      
-    if [ $((COUNTER % 10)) -eq 0 ]; then
-        echo "Progress: $COUNTER/$TOTAL_FILES files restored"
-    fi
-done < /tmp/restore_file_list.txt
-
-echo "Restore operation completed!"
-rm -f /tmp/restore_file_list.txt
-EOF
-
-chmod +x /tmp/restore-ccp4-data.sh
-
-echo -e "${BLUE}🚀 Starting restore operation...${NC}"
-/tmp/restore-ccp4-data.sh "$BACKUP_RG" "$BACKUP_STORAGE_ACCOUNT" "$BACKUP_SHARE_NAME" "$TARGET_RG" "$TARGET_STORAGE_ACCOUNT" "$TARGET_SHARE_NAME"
+echo "azcopy copy '$SRC_URL' '$DST_URL' --recursive=true"
+$AZCOPY_PATH copy "$SRC_URL" "$DST_URL" --recursive=true
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}✅ Restore completed successfully!${NC}"
