@@ -27,21 +27,19 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-03-01' = {
       linuxConfiguration: {
         disablePasswordAuthentication: false
       }
-      customData: base64(
-        '''#cloud-config
+      customData: base64('''#cloud-config
 runcmd:
   - apt-get update
   - apt-get install -y cifs-utils
   - mkdir -p /mnt/ccp4data
   - mount -t cifs //${storageAccountName}.file.core.windows.net/${fileShareName} /mnt/ccp4data -o vers=3.0,username=${storageAccountName},password=${storageAccountKey},dir_mode=0777,file_mode=0777,serverino
-'''
-      )
+''')
     }
     storageProfile: {
       imageReference: {
         publisher: 'Canonical'
-        offer: 'UbuntuServer'
-        sku: '18.04-LTS'
+        offer: '0001-com-ubuntu-server-jammy'
+        sku: '22_04-lts'
         version: 'latest'
       }
       osDisk: {
@@ -59,6 +57,12 @@ runcmd:
       ]
     }
   }
+  tags: {
+    storageAccountName: storageAccountName
+    fileShareName: fileShareName
+    storageAccountKey: storageAccountKey
+  }
+  dependsOn: [nic]
 }
 
 resource nic 'Microsoft.Network/networkInterfaces@2023-05-01' = {
