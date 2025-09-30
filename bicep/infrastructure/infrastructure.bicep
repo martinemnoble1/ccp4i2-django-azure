@@ -140,6 +140,11 @@ resource privateDnsZonePostgres 'Microsoft.Network/privateDnsZones@2020-06-01' =
   location: 'global'
 }
 
+resource privateDnsZoneServiceBus 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+  name: 'privatelink.servicebus.windows.net'
+  location: 'global'
+}
+
 // Link Private DNS Zones to VNet
 resource privateDnsZoneStorageLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
   name: 'storage-link'
@@ -189,7 +194,22 @@ resource privateDnsZonePostgresLink 'Microsoft.Network/privateDnsZones/virtualNe
   }
 }
 
-// Azure Container Registry
+resource privateDnsZoneServiceBusLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+  name: 'servicebus-link'
+  parent: privateDnsZoneServiceBus
+  location: 'global'
+  properties: {
+    registrationEnabled: false
+    virtualNetwork: {
+      id: vnet.id
+    }
+  }
+}
+
+// Existing resources (deployed separately)
+resource serviceBusNamespace 'Microsoft.ServiceBus/namespaces@2024-01-01' existing = {
+  name: '${prefix}-servicebus'
+}
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
   name: acrName
   location: location
@@ -434,6 +454,40 @@ resource postgresPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/private
         name: 'postgres-config'
         properties: {
           privateDnsZoneId: privateDnsZonePostgres.id
+        }
+      }
+    ]
+  }
+}
+
+resource serviceBusPrivateEndpoint 'Microsoft.Network/privateEndpoints@2023-05-01' = {
+  name: '${resourceSuffix}-servicebus-pe'
+  location: location
+  properties: {
+    subnet: {
+      id: '${vnet.id}/subnets/private-endpoints-subnet'
+    }
+    privateLinkServiceConnections: [
+      {
+        name: 'servicebus-connection'
+        properties: {
+          privateLinkServiceId: serviceBusNamespace.id
+          groupIds: ['namespace']
+        }
+      }
+    ]
+  }
+}
+
+resource serviceBusPrivateDnsZoneGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-05-01' = {
+  name: 'servicebus-dns-zone-group'
+  parent: serviceBusPrivateEndpoint
+  properties: {
+    privateDnsZoneConfigs: [
+      {
+        name: 'servicebus-config'
+        properties: {
+          privateDnsZoneId: privateDnsZoneServiceBus.id
         }
       }
     ]

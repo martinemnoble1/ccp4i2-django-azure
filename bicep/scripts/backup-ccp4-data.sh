@@ -199,7 +199,7 @@ echo "2. Copy data from $BACKUP_STORAGE_ACCOUNT/$BACKUP_SHARE_NAME to your new l
 echo "3. Use the restore script that will be created next"
 
 # Save backup info to a file for future reference
-cat > ccp4-backup-info.txt << EOF
+cat > ccp4-backup-info.txt <<EOF
 # CCP4 Backup Information
 # Created: $(date)
 

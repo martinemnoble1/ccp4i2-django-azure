@@ -90,6 +90,11 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
           identity: 'system'
         }
+        {
+          name: 'servicebus-connection'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/servicebus-connection'
+          identity: 'system'
+        }
       ]
     }
     template: {
@@ -107,7 +112,6 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               httpGet: {
                 path: '/health/'
                 port: 8000
-                host: 'localhost'
               }
               initialDelaySeconds: 60 // Reduced from 120 to comply with Azure limits (max 60)
               periodSeconds: 60 // Check less frequently
@@ -120,7 +124,6 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               httpGet: {
                 path: '/health/'
                 port: 8000
-                host: 'localhost'
               }
               initialDelaySeconds: 60
               periodSeconds: 30
@@ -133,7 +136,6 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               httpGet: {
                 path: '/health/'
                 port: 8000
-                host: 'localhost'
               }
               initialDelaySeconds: 60 // Reduced from 180 to comply with Azure limits (max 60) - Django should start within 60 seconds
               periodSeconds: 30
@@ -203,6 +205,14 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'CORS_ALLOW_CREDENTIALS'
               value: 'True'
             }
+            {
+              name: 'SERVICE_BUS_CONNECTION_STRING'
+              secretRef: 'servicebus-connection'
+            }
+            {
+              name: 'SERVICE_BUS_QUEUE_NAME'
+              value: '${prefix}-jobs'
+            }
           ]
           volumeMounts: [
             {
@@ -221,7 +231,7 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
         }
       ]
       scale: {
-        minReplicas: 2
+        minReplicas: 1
         maxReplicas: 10
         rules: [
           {
@@ -293,6 +303,11 @@ resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
           identity: 'system'
         }
+        {
+          name: 'servicebus-connection'
+          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/servicebus-connection'
+          identity: 'system'
+        }
       ]
     }
     template: {
@@ -354,6 +369,14 @@ resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'CCP4I2_PROJECTS_DIR'
               value: '/mnt/ccp4data/ccp4i2-projects'
+            }
+            {
+              name: 'SERVICE_BUS_CONNECTION_STRING'
+              secretRef: 'servicebus-connection'
+            }
+            {
+              name: 'SERVICE_BUS_QUEUE_NAME'
+              value: '${prefix}-jobs'
             }
           ]
           volumeMounts: [

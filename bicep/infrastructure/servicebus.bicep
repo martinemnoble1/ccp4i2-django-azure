@@ -8,7 +8,7 @@ param prefix string = 'ccp4i2-bicep'
 param keyVaultName string
 
 @description('Service Bus SKU')
-param sbSku string = 'Standard'
+param sbSku string = 'Premium'
 
 var sbNamespaceName = '${prefix}-servicebus'
 var sbQueueName = '${prefix}-jobs'

@@ -2,6 +2,7 @@
 *.env
 .env.*
 bicep/.env.deployment
+bicep/.env.vm
 
 # Parameters files with secrets (use .template versions for reference)
 bicep/infrastructure/applications.parameters.json
