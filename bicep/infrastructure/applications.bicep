@@ -216,6 +216,18 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'SERVICE_BUS_QUEUE_NAME'
               value: '${prefix}-jobs'
             }
+            {
+              name: 'FILE_UPLOAD_MAX_MEMORY_SIZE'
+              value: '104857600' // 100MB in bytes
+            }
+            {
+              name: 'DATA_UPLOAD_MAX_MEMORY_SIZE'
+              value: '104857600' // 100MB in bytes
+            }
+            {
+              name: 'FILE_UPLOAD_MAX_NUMBER_FILES'
+              value: '10'
+            }
           ]
           volumeMounts: [
             {
@@ -238,10 +250,30 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
         maxReplicas: 10
         rules: [
           {
+            name: 'cpu-scaling'
+            custom: {
+              type: 'cpu'
+              metadata: {
+                type: 'Utilization'
+                value: '70'
+              }
+            }
+          }
+          {
+            name: 'memory-scaling'
+            custom: {
+              type: 'memory'
+              metadata: {
+                type: 'Utilization'
+                value: '70'
+              }
+            }
+          }
+          {
             name: 'http-scaling'
             http: {
               metadata: {
-                concurrentRequests: '50' // Increased from 10 to 50 for better file upload handling
+                concurrentRequests: '20' // Lower threshold for faster scaling on file uploads
               }
             }
           }
@@ -480,8 +512,8 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           name: 'web'
           image: '${acrLoginServer}/ccp4i2/web:${imageTag}'
           resources: {
-            cpu: json('0.5')
-            memory: '1.0Gi'
+            cpu: json('1.0')
+            memory: '2.0Gi'
           }
           env: [
             {
