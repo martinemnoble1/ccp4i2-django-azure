@@ -13,8 +13,11 @@ param postgresServerFqdn string
 @description('Key Vault name - accessed via private endpoint')
 param keyVaultName string
 
-@description('Container image tag')
-param imageTag string = 'latest'
+@description('Web container image tag')
+param imageTagWeb string = 'latest'
+
+@description('Server container image tag')
+param imageTagServer string = 'latest'
 
 @description('Resource naming prefix')
 param prefix string = 'ccp4i2-bicep'
@@ -100,7 +103,7 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
       containers: [
         {
           name: 'server'
-          image: '${acrLoginServer}/ccp4i2/server:${imageTag}'
+          image: '${acrLoginServer}/ccp4i2/server:${imageTagServer}'
           resources: {
             cpu: json('2.0')
             memory: '4.0Gi'
@@ -349,7 +352,7 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
       containers: [
         {
           name: 'worker'
-          image: '${acrLoginServer}/ccp4i2/server:${imageTag}'
+          image: '${acrLoginServer}/ccp4i2/server:${imageTagServer}'
           command: ['/usr/src/app/startup-worker.sh'] // Use worker startup script instead of Django server
           resources: {
             cpu: json('2.0')
@@ -399,6 +402,14 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               name: 'CCP4_DATA_PATH'
               value: '/mnt/ccp4data'
+            }
+            {
+              name: 'CCP4'
+              value: '/mnt/ccp4data/ccp4-9'
+            }
+            {
+              name: 'LD_LIBRARY_PATH'
+              value: '/mnt/ccp4data/ccp4-9/lib'
             }
             {
               name: 'CCP4I2_PROJECTS_DIR'
@@ -510,7 +521,7 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
       containers: [
         {
           name: 'web'
-          image: '${acrLoginServer}/ccp4i2/web:${imageTag}'
+          image: '${acrLoginServer}/ccp4i2/web:${imageTagWeb}'
           resources: {
             cpu: json('1.0')
             memory: '2.0Gi'

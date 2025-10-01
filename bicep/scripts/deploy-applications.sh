@@ -124,7 +124,8 @@ az deployment group create \
                acrName="$ACR_NAME" \
                postgresServerFqdn="$POSTGRES_FQDN" \
                keyVaultName="$KEY_VAULT_NAME" \
-               imageTag="${IMAGE_TAG:-latest}" \
+               imageTagWeb="${IMAGE_TAG_WEB:-latest}" \
+               imageTagServer="${IMAGE_TAG_SERVER:-latest}" \
                prefix=ccp4i2-bicep \
                aadClientId="${NEXT_PUBLIC_AAD_CLIENT_ID:-}" \
                aadTenantId="${NEXT_PUBLIC_AAD_TENANT_ID:-}" \

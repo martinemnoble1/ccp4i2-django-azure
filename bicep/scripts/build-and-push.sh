@@ -159,15 +159,25 @@ fi
 
 echo -e "${GREEN}✅ ACR login successful${NC}"
 
-# Generate image tag
-IMAGE_TAG=$(date +%Y%m%d-%H%M%S)
+# Generate image tags
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+IMAGE_TAG_WEB=""
+IMAGE_TAG_SERVER=""
+
+if [ "$BUILD_WEB" = true ]; then
+    IMAGE_TAG_WEB=$TIMESTAMP
+fi
+
+if [ "$BUILD_SERVER" = true ]; then
+    IMAGE_TAG_SERVER=$TIMESTAMP
+fi
 
 # Build and push images
 if [ "$BUILD_SERVER" = true ]; then
     echo -e "${YELLOW}🔨 Building server image...${NC}"
     az acr build \
       --registry $ACR_NAME \
-      --image ccp4i2/server:$IMAGE_TAG \
+      --image ccp4i2/server:$IMAGE_TAG_SERVER \
       --image ccp4i2/server:latest \
       --file Docker/Dockerfile.server \
       ./server
@@ -182,7 +192,7 @@ if [ "$BUILD_WEB" = true ]; then
     echo -e "${YELLOW}🔨 Building web image...${NC}"
     az acr build \
       --registry $ACR_NAME \
-      --image ccp4i2/web:$IMAGE_TAG \
+      --image ccp4i2/web:$IMAGE_TAG_WEB \
       --image ccp4i2/web:latest \
       --file Docker/Dockerfile.web \
       --build-arg NEXT_PUBLIC_AAD_CLIENT_ID=$NEXT_PUBLIC_AAD_CLIENT_ID \
@@ -197,16 +207,23 @@ fi
 
 # Note: nginx is not used in Container Apps architecture (built-in ingress)
 
-# Update environment file with image tag only if both images were built
-if [ "$BUILD_SERVER" = true ] && [ "$BUILD_WEB" = true ]; then
-    echo "IMAGE_TAG=$IMAGE_TAG" >> "$BICEP_DIR/.env.deployment"
-    echo -e "${YELLOW}📝 Updated .env.deployment with new image tag: $IMAGE_TAG${NC}"
-elif [ "$BUILD_SERVER" = true ]; then
-    echo -e "${YELLOW}⚠️  Server image built but .env.deployment not updated (web image not built)${NC}"
-    echo -e "${YELLOW}💡 To deploy, ensure both images have the same tag or build both together${NC}"
-elif [ "$BUILD_WEB" = true ]; then
-    echo -e "${YELLOW}⚠️  Web image built but .env.deployment not updated (server image not built)${NC}"
-    echo -e "${YELLOW}💡 To deploy, ensure both images have the same tag or build both together${NC}"
+# Update environment file with image tags
+if [ "$BUILD_WEB" = true ]; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/^IMAGE_TAG_WEB=.*/IMAGE_TAG_WEB=$IMAGE_TAG_WEB/" "$BICEP_DIR/.env.deployment"
+    else
+        sed -i "s/^IMAGE_TAG_WEB=.*/IMAGE_TAG_WEB=$IMAGE_TAG_WEB/" "$BICEP_DIR/.env.deployment"
+    fi
+    echo -e "${YELLOW}📝 Updated .env.deployment with IMAGE_TAG_WEB: $IMAGE_TAG_WEB${NC}"
+fi
+
+if [ "$BUILD_SERVER" = true ]; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/^IMAGE_TAG_SERVER=.*/IMAGE_TAG_SERVER=$IMAGE_TAG_SERVER/" "$BICEP_DIR/.env.deployment"
+    else
+        sed -i "s/^IMAGE_TAG_SERVER=.*/IMAGE_TAG_SERVER=$IMAGE_TAG_SERVER/" "$BICEP_DIR/.env.deployment"
+    fi
+    echo -e "${YELLOW}� Updated .env.deployment with IMAGE_TAG_SERVER: $IMAGE_TAG_SERVER${NC}"
 fi
 
 # Restore original ACR network default action
@@ -227,7 +244,14 @@ fi
 # az acr update --name $ACR_NAME --public-network-enabled false
 
 echo -e "${GREEN}✅ Images built and pushed successfully${NC}"
-echo -e "${YELLOW}📝 Image tag: $IMAGE_TAG${NC}"
+
+if [ "$BUILD_WEB" = true ]; then
+    echo -e "${YELLOW}📝 Web image tag: $IMAGE_TAG_WEB${NC}"
+fi
+
+if [ "$BUILD_SERVER" = true ]; then
+    echo -e "${YELLOW}📝 Server image tag: $IMAGE_TAG_SERVER${NC}"
+fi
 
 if [ "$BUILD_SERVER" = true ] && [ "$BUILD_WEB" = true ]; then
     echo -e "${YELLOW}🔐 Security: ACR public access enabled with IP firewall restrictions${NC}"
