@@ -35,7 +35,6 @@ param aadTenantId string
 var serverAppName = '${prefix}-server'
 var webAppName = '${prefix}-web'
 var workerAppName = '${prefix}-worker'
-var managementAppName = 'ccp4i2-bicep-management'
 
 // Existing resources
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -122,7 +121,7 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
             {
               type: 'Readiness'
               httpGet: {
-                path: '/health/'
+                path: '/projects/'
                 port: 8000
               }
               initialDelaySeconds: 60
@@ -186,6 +185,10 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: 'false' // Private endpoint uses Azure's trusted certificates
             }
             {
+              name: 'DEBUG'
+              value: 'true' // Ensure DEBUG is false in production
+            }
+            {
               name: 'CCP4_DATA_PATH'
               value: '/mnt/ccp4data'
             }
@@ -195,11 +198,11 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             {
               name: 'ALLOWED_HOSTS'
-              value: '${webAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName}.internal.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io,${serverAppName},${webAppName},localhost,127.0.0.1,0.0.0.0,*'
+              value: '${serverAppName},${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1,*'
             }
             {
               name: 'CORS_ALLOWED_ORIGINS'
-              value: 'https://${webAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              value: 'http://${webAppName},https://${webAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
             }
             {
               name: 'CORS_ALLOW_CREDENTIALS'
@@ -238,167 +241,11 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
             name: 'http-scaling'
             http: {
               metadata: {
-                concurrentRequests: '10'
+                concurrentRequests: '50' // Increased from 10 to 50 for better file upload handling
               }
             }
           }
         ]
-      }
-      volumes: [
-        {
-          name: 'ccp4data-volume'
-          storageName: 'ccp4data-mount'
-          storageType: 'AzureFile'
-        }
-        {
-          name: 'staticfiles-volume'
-          storageName: 'staticfiles-mount'
-          storageType: 'AzureFile'
-        }
-        {
-          name: 'mediafiles-volume'
-          storageName: 'mediafiles-mount'
-          storageType: 'AzureFile'
-        }
-      ]
-    }
-  }
-}
-
-// Management Container App
-resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
-  name: managementAppName
-  location: resourceGroup().location
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    managedEnvironmentId: containerAppsEnvironmentId
-    configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: false
-        targetPort: 8000
-        allowInsecure: false
-      }
-      registries: [
-        {
-          server: acrLoginServer
-          username: acrName
-          passwordSecretRef: 'registry-password'
-        }
-      ]
-      secrets: [
-        {
-          name: 'registry-password'
-          value: containerRegistry.listCredentials().passwords[0].value
-        }
-        {
-          name: 'db-password'
-          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/database-admin-password'
-          identity: 'system'
-        }
-        {
-          name: 'django-secret-key'
-          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
-          identity: 'system'
-        }
-        {
-          name: 'servicebus-connection'
-          keyVaultUrl: '${keyVault.properties.vaultUri}secrets/servicebus-connection'
-          identity: 'system'
-        }
-      ]
-    }
-    template: {
-      containers: [
-        {
-          name: 'management'
-          image: '${acrLoginServer}/ccp4i2/server:${imageTag}'
-          command: ['/bin/bash']
-          args: ['-c', 'while true; do echo "Management container active: $(date)"; sleep 300; done']
-          resources: {
-            cpu: json('0.5')
-            memory: '1.0Gi'
-          }
-          env: [
-            {
-              name: 'DJANGO_SETTINGS_MODULE'
-              value: 'ccp4x.config.settings'
-            }
-            {
-              name: 'DB_HOST'
-              value: postgresServerFqdn // Will resolve to private IP via private DNS zone
-            }
-            {
-              name: 'DB_PORT'
-              value: '5432'
-            }
-            {
-              name: 'DB_USER'
-              value: 'ccp4i2'
-            }
-            {
-              name: 'DB_NAME'
-              value: 'postgres'
-            }
-            {
-              name: 'DB_PASSWORD'
-              secretRef: 'db-password'
-            }
-            {
-              name: 'SECRET_KEY'
-              secretRef: 'django-secret-key'
-            }
-            {
-              name: 'DB_SSL_MODE'
-              value: 'require'
-            }
-            {
-              name: 'DB_SSL_ROOT_CERT'
-              value: 'true'
-            }
-            {
-              name: 'DB_SSL_REQUIRE_CERT'
-              value: 'false' // Private endpoint uses Azure's trusted certificates
-            }
-            {
-              name: 'CCP4_DATA_PATH'
-              value: '/mnt/ccp4data'
-            }
-            {
-              name: 'CCP4I2_PROJECTS_DIR'
-              value: '/mnt/ccp4data/ccp4i2-projects'
-            }
-            {
-              name: 'SERVICE_BUS_CONNECTION_STRING'
-              secretRef: 'servicebus-connection'
-            }
-            {
-              name: 'SERVICE_BUS_QUEUE_NAME'
-              value: '${prefix}-jobs'
-            }
-          ]
-          volumeMounts: [
-            {
-              volumeName: 'ccp4data-volume'
-              mountPath: '/mnt/ccp4data'
-            }
-            {
-              volumeName: 'staticfiles-volume'
-              mountPath: '/mnt/staticfiles'
-            }
-            {
-              volumeName: 'mediafiles-volume'
-              mountPath: '/mnt/mediafiles'
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: 1
-        maxReplicas: 1
-        rules: []
       }
       volumes: [
         {
@@ -435,7 +282,7 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
       ingress: {
         external: false // Internal only - no external access needed
         targetPort: 8000
-        allowInsecure: false
+        allowInsecure: true
       }
       registries: [
         {
@@ -473,8 +320,8 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
           image: '${acrLoginServer}/ccp4i2/server:${imageTag}'
           command: ['/usr/src/app/startup-worker.sh'] // Use worker startup script instead of Django server
           resources: {
-            cpu: json('1.0')
-            memory: '2.0Gi'
+            cpu: json('2.0')
+            memory: '4.0Gi'
           }
           env: [
             {
@@ -639,11 +486,11 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
           env: [
             {
               name: 'NEXT_PUBLIC_API_BASE_URL'
-              value: 'https://${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              value: 'http://${serverAppName}'
             }
             {
               name: 'API_BASE_URL'
-              value: 'https://${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+              value: 'http://${serverAppName}'
             }
             {
               name: 'NEXT_PUBLIC_AAD_CLIENT_ID'
@@ -733,5 +580,4 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
 // Outputs
 output serverUrl string = 'https://${serverApp.properties.configuration.ingress.fqdn}'
 output webUrl string = 'https://${webApp.properties.configuration.ingress.fqdn}'
-output managementAppName string = managementApp.name
 output workerAppName string = workerApp.name

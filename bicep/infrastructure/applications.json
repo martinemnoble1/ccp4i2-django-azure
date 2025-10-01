@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.37.4.10188",
-      "templateHash": "16374612303968029882"
+      "templateHash": "6702246980095503932"
     }
   },
   "parameters": {
@@ -69,8 +69,7 @@
   "variables": {
     "serverAppName": "[format('{0}-server', parameters('prefix'))]",
     "webAppName": "[format('{0}-web', parameters('prefix'))]",
-    "workerAppName": "[format('{0}-worker', parameters('prefix'))]",
-    "managementAppName": "ccp4i2-bicep-management"
+    "workerAppName": "[format('{0}-worker', parameters('prefix'))]"
   },
   "resources": [
     {
@@ -94,7 +93,8 @@
                 "weight": 100,
                 "latestRevision": true
               }
-            ]
+            ],
+            "transport": "Http"
           },
           "registries": [
             {
@@ -150,7 +150,7 @@
                 {
                   "type": "Readiness",
                   "httpGet": {
-                    "path": "/health/",
+                    "path": "/projects/",
                     "port": 8000
                   },
                   "initialDelaySeconds": 60,
@@ -214,6 +214,10 @@
                   "value": "false"
                 },
                 {
+                  "name": "DEBUG",
+                  "value": "false"
+                },
+                {
                   "name": "CCP4_DATA_PATH",
                   "value": "/mnt/ccp4data"
                 },
@@ -266,172 +270,11 @@
                 "name": "http-scaling",
                 "http": {
                   "metadata": {
-                    "concurrentRequests": "10"
+                    "concurrentRequests": "50"
                   }
                 }
               }
             ]
-          },
-          "volumes": [
-            {
-              "name": "ccp4data-volume",
-              "storageName": "ccp4data-mount",
-              "storageType": "AzureFile"
-            },
-            {
-              "name": "staticfiles-volume",
-              "storageName": "staticfiles-mount",
-              "storageType": "AzureFile"
-            },
-            {
-              "name": "mediafiles-volume",
-              "storageName": "mediafiles-mount",
-              "storageType": "AzureFile"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "type": "Microsoft.App/containerApps",
-      "apiVersion": "2023-05-01",
-      "name": "[variables('managementAppName')]",
-      "location": "[resourceGroup().location]",
-      "identity": {
-        "type": "SystemAssigned"
-      },
-      "properties": {
-        "managedEnvironmentId": "[parameters('containerAppsEnvironmentId')]",
-        "configuration": {
-          "activeRevisionsMode": "Single",
-          "ingress": {
-            "external": false,
-            "targetPort": 8000,
-            "allowInsecure": false
-          },
-          "registries": [
-            {
-              "server": "[parameters('acrLoginServer')]",
-              "username": "[parameters('acrName')]",
-              "passwordSecretRef": "registry-password"
-            }
-          ],
-          "secrets": [
-            {
-              "name": "registry-password",
-              "value": "[listCredentials(resourceId('Microsoft.ContainerRegistry/registries', parameters('acrName')), '2023-07-01').passwords[0].value]"
-            },
-            {
-              "name": "db-password",
-              "keyVaultUrl": "[format('{0}secrets/database-admin-password', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-02-01').vaultUri)]",
-              "identity": "system"
-            },
-            {
-              "name": "django-secret-key",
-              "keyVaultUrl": "[format('{0}secrets/django-secret-key', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-02-01').vaultUri)]",
-              "identity": "system"
-            },
-            {
-              "name": "servicebus-connection",
-              "keyVaultUrl": "[format('{0}secrets/servicebus-connection', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-02-01').vaultUri)]",
-              "identity": "system"
-            }
-          ]
-        },
-        "template": {
-          "containers": [
-            {
-              "name": "management",
-              "image": "[format('{0}/ccp4i2/server:{1}', parameters('acrLoginServer'), parameters('imageTag'))]",
-              "command": [
-                "/bin/bash"
-              ],
-              "args": [
-                "-c",
-                "while true; do echo \"Management container active: $(date)\"; sleep 300; done"
-              ],
-              "resources": {
-                "cpu": "[json('0.5')]",
-                "memory": "1.0Gi"
-              },
-              "env": [
-                {
-                  "name": "DJANGO_SETTINGS_MODULE",
-                  "value": "ccp4x.config.settings"
-                },
-                {
-                  "name": "DB_HOST",
-                  "value": "[parameters('postgresServerFqdn')]"
-                },
-                {
-                  "name": "DB_PORT",
-                  "value": "5432"
-                },
-                {
-                  "name": "DB_USER",
-                  "value": "ccp4i2"
-                },
-                {
-                  "name": "DB_NAME",
-                  "value": "postgres"
-                },
-                {
-                  "name": "DB_PASSWORD",
-                  "secretRef": "db-password"
-                },
-                {
-                  "name": "SECRET_KEY",
-                  "secretRef": "django-secret-key"
-                },
-                {
-                  "name": "DB_SSL_MODE",
-                  "value": "require"
-                },
-                {
-                  "name": "DB_SSL_ROOT_CERT",
-                  "value": "true"
-                },
-                {
-                  "name": "DB_SSL_REQUIRE_CERT",
-                  "value": "false"
-                },
-                {
-                  "name": "CCP4_DATA_PATH",
-                  "value": "/mnt/ccp4data"
-                },
-                {
-                  "name": "CCP4I2_PROJECTS_DIR",
-                  "value": "/mnt/ccp4data/ccp4i2-projects"
-                },
-                {
-                  "name": "SERVICE_BUS_CONNECTION_STRING",
-                  "secretRef": "servicebus-connection"
-                },
-                {
-                  "name": "SERVICE_BUS_QUEUE_NAME",
-                  "value": "[format('{0}-jobs', parameters('prefix'))]"
-                }
-              ],
-              "volumeMounts": [
-                {
-                  "volumeName": "ccp4data-volume",
-                  "mountPath": "/mnt/ccp4data"
-                },
-                {
-                  "volumeName": "staticfiles-volume",
-                  "mountPath": "/mnt/staticfiles"
-                },
-                {
-                  "volumeName": "mediafiles-volume",
-                  "mountPath": "/mnt/mediafiles"
-                }
-              ]
-            }
-          ],
-          "scale": {
-            "minReplicas": 1,
-            "maxReplicas": 1,
-            "rules": []
           },
           "volumes": [
             {
@@ -508,8 +351,8 @@
                 "/usr/src/app/startup-worker.sh"
               ],
               "resources": {
-                "cpu": "[json('1.0')]",
-                "memory": "2.0Gi"
+                "cpu": "[json('2.0')]",
+                "memory": "4.0Gi"
               },
               "env": [
                 {
@@ -674,11 +517,11 @@
               "env": [
                 {
                   "name": "NEXT_PUBLIC_API_BASE_URL",
-                  "value": "[format('https://{0}.whitecliff-258bc831.northeurope.azurecontainerapps.io', variables('serverAppName'))]"
+                  "value": "http://ccp4i2-bicep-server.k8se-apps.svc.cluster.local"
                 },
                 {
                   "name": "API_BASE_URL",
-                  "value": "[format('https://{0}.whitecliff-258bc831.northeurope.azurecontainerapps.io', variables('serverAppName'))]"
+                  "value": "http://ccp4i2-bicep-server.k8se-apps.svc.cluster.local"
                 },
                 {
                   "name": "NEXT_PUBLIC_AAD_CLIENT_ID",
@@ -739,10 +582,6 @@
     "webUrl": {
       "type": "string",
       "value": "[format('https://{0}', reference(resourceId('Microsoft.App/containerApps', variables('webAppName')), '2023-05-01').configuration.ingress.fqdn)]"
-    },
-    "managementAppName": {
-      "type": "string",
-      "value": "[variables('managementAppName')]"
     },
     "workerAppName": {
       "type": "string",
