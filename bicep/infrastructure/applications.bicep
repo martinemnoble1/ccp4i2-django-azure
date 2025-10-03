@@ -550,6 +550,10 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
               mountPath: '/mnt/staticfiles'
             }
             {
+              volumeName: 'ccp4data-volume'
+              mountPath: '/mnt/ccp4data'
+            }
+            {
               volumeName: 'mediafiles-volume'
               mountPath: '/mnt/mediafiles'
             }
@@ -571,6 +575,11 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
         ]
       }
       volumes: [
+        {
+          name: 'ccp4data-volume'
+          storageName: 'ccp4data-mount'
+          storageType: 'AzureFile'
+        }
         {
           name: 'staticfiles-volume'
           storageName: 'staticfiles-mount'
