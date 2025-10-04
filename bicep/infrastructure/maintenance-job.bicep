@@ -92,7 +92,7 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
           command: [
             'sh'
             '-c'
-            'cd /mnt/ccp4data && mv ccp4-9 ccp4-9.unsafe3 && tar -xzf ccp4-9.0.011-shelx-arpwarp-linux64.tar.gz --checkpoint=1000 --checkpoint-action=exec="echo Extracted %u files..." && cd ccp4-9 && ./BINARY.setup --run-from-script && ccp4-python -m pip install -r /usr/src/app/requirements.txt'
+            'cd /mnt/ccp4data && mv ccp4-9 ccp4-9.unsafe3 && tar -xzf ccp4-9.0.011-shelx-arpwarp-linux64.tar.gz --checkpoint=1000 --checkpoint-action=echo="Extracted %u files..." && cd ccp4-9 && ./BINARY.setup --run-from-script && ccp4-python -m pip install -r /usr/src/app/requirements.txt'
           ]
           env: [
             {
