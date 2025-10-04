@@ -49,11 +49,43 @@ log_error() {
 enable_kv_access() {
     log_info "Enabling Key Vault public access temporarily..."
     az keyvault update --name "$KEY_VAULT_NAME" --resource-group "$RESOURCE_GROUP" --public-network-access Enabled > /dev/null
+    
+    # Add current IP to Key Vault firewall (both IPv4 and IPv6)
+    CURRENT_IP_V4=$(curl -4 -s https://ifconfig.me 2>/dev/null || echo "")
+    CURRENT_IP_V6=$(curl -6 -s https://ifconfig.me 2>/dev/null || echo "")
+    
+    if [ ! -z "$CURRENT_IP_V4" ]; then
+        log_info "Adding IPv4 address ($CURRENT_IP_V4) to Key Vault firewall..."
+        az keyvault network-rule add --name "$KEY_VAULT_NAME" --ip-address "$CURRENT_IP_V4" > /dev/null 2>&1 || true
+    fi
+    
+    if [ ! -z "$CURRENT_IP_V6" ]; then
+        log_info "Adding IPv6 address ($CURRENT_IP_V6) to Key Vault firewall..."
+        az keyvault network-rule add --name "$KEY_VAULT_NAME" --ip-address "$CURRENT_IP_V6" > /dev/null 2>&1 || true
+    fi
+    
+    # Wait for firewall rule to propagate
+    log_info "Waiting for Key Vault firewall rule to propagate..."
+    sleep 10
+    
     log_success "Key Vault public access enabled"
 }
 
 # Function to disable Key Vault public access
 disable_kv_access() {
+    log_info "Removing IP addresses from Key Vault firewall..."
+    
+    CURRENT_IP_V4=$(curl -4 -s https://ifconfig.me 2>/dev/null || echo "")
+    CURRENT_IP_V6=$(curl -6 -s https://ifconfig.me 2>/dev/null || echo "")
+    
+    if [ ! -z "$CURRENT_IP_V4" ]; then
+        az keyvault network-rule remove --name "$KEY_VAULT_NAME" --ip-address "$CURRENT_IP_V4" > /dev/null 2>&1 || true
+    fi
+    
+    if [ ! -z "$CURRENT_IP_V6" ]; then
+        az keyvault network-rule remove --name "$KEY_VAULT_NAME" --ip-address "$CURRENT_IP_V6" > /dev/null 2>&1 || true
+    fi
+    
     log_info "Disabling Key Vault public access..."
     az keyvault update --name "$KEY_VAULT_NAME" --resource-group "$RESOURCE_GROUP" --public-network-access Disabled > /dev/null
     log_success "Key Vault public access disabled"
@@ -61,18 +93,26 @@ disable_kv_access() {
 
 # Function to add temporary firewall rule for current IP
 add_temp_firewall_rule() {
-    CURRENT_IP=$(curl -s https://ifconfig.me)
+    CURRENT_IP=$(curl -4 -s https://ifconfig.me)
     RULE_NAME="TempAccess_$(date +%Y%m%d_%H%M%S)"
 
-    log_info "Adding temporary firewall rule for IP: $CURRENT_IP"
+    log_info "Adding temporary firewall rule for IPv4: $CURRENT_IP"
     az postgres flexible-server firewall-rule create \
         --resource-group "$RESOURCE_GROUP" \
         --name "$POSTGRES_SERVER" \
         --rule-name "$RULE_NAME" \
         --start-ip-address "$CURRENT_IP" \
-        --end-ip-address "$CURRENT_IP" > /dev/null
-
-    echo "$RULE_NAME"  # Return the rule name for cleanup
+        --end-ip-address "$CURRENT_IP" > /dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        log_success "Firewall rule '$RULE_NAME' created successfully"
+        log_info "Waiting for firewall rule to propagate..."
+        sleep 10
+        echo "$RULE_NAME"  # Return the rule name for cleanup
+    else
+        log_error "Failed to create firewall rule"
+        return 1
+    fi
 }
 
 # Function to remove temporary firewall rule
@@ -186,7 +226,14 @@ main() {
     update_db_password_secret "$ADMIN_PASSWORD"
 
     # Step 4: Add temporary firewall rule for database access
-    TEMP_RULE=$(add_temp_firewall_rule)
+    log_info "Setting up database firewall access..."
+    TEMP_RULE=$(add_temp_firewall_rule 2>&1 | grep -v "^{" | tail -1)
+    
+    if [ -z "$TEMP_RULE" ]; then
+        log_error "Failed to create firewall rule"
+        disable_kv_access
+        exit 1
+    fi
 
     # Step 5: Update database user password
     update_db_user_password "$ADMIN_PASSWORD" "$TEMP_RULE"

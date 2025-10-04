@@ -525,6 +525,12 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   }
 }
 
+// Shared User-Assigned Managed Identity for Container Apps
+resource containerAppsIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${resourceSuffix}-identity'
+  location: location
+}
+
 // Storage for Container Apps Environment
 resource containerAppsStorage 'Microsoft.App/managedEnvironments/storages@2023-05-01' = {
   name: 'ccp4data-mount'
@@ -579,3 +585,5 @@ output vnetName string = vnet.name
 output containerAppsSubnetId string = '${vnet.id}/subnets/container-apps-subnet'
 output privateEndpointsSubnetId string = '${vnet.id}/subnets/private-endpoints-subnet'
 output resourceGroupName string = resourceGroup().name
+output containerAppsIdentityId string = containerAppsIdentity.id
+output containerAppsIdentityPrincipalId string = containerAppsIdentity.properties.principalId

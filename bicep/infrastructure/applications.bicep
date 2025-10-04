@@ -28,6 +28,12 @@ param aadClientId string
 @description('Azure AD Tenant ID for frontend authentication')
 param aadTenantId string
 
+@description('Shared Container Apps Identity ID')
+param containerAppsIdentityId string
+
+@description('Shared Container Apps Identity Principal ID')
+param containerAppsIdentityPrincipalId string
+
 // - PostgreSQL is accessed via private endpoint (no public access)
 // - Key Vault is accessed via private endpoint (no public access)
 // - Storage Account is accessed via private endpoint (no public access)
@@ -53,7 +59,10 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: serverAppName
   location: resourceGroup().location
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${containerAppsIdentityId}': {}
+    }
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironmentId
@@ -85,17 +94,17 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'db-password'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/database-admin-password'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
         {
           name: 'django-secret-key'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
         {
           name: 'servicebus-connection'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/servicebus-connection'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
       ]
     }
@@ -308,7 +317,10 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: workerAppName
   location: resourceGroup().location
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${containerAppsIdentityId}': {}
+    }
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironmentId
@@ -334,17 +346,17 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'db-password'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/database-admin-password'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
         {
           name: 'django-secret-key'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
         {
           name: 'servicebus-connection'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/servicebus-connection'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
       ]
     }

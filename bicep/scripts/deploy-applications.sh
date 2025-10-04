@@ -116,6 +116,23 @@ echo -e "${GREEN}✅ Infrastructure outputs retrieved${NC}"
 echo -e "${YELLOW}🚀 Deploying container applications...${NC}"
 APP_DEPLOYMENT_NAME="applications-$(date +%Y%m%d-%H%M%S)"
 
+CONTAINER_APPS_IDENTITY_ID=$(az deployment group show \
+  --resource-group $RESOURCE_GROUP \
+  --name $INFRA_DEPLOYMENT \
+  --query properties.outputs.containerAppsIdentityId.value \
+  --output tsv)
+
+CONTAINER_APPS_IDENTITY_PRINCIPAL_ID=$(az deployment group show \
+  --resource-group $RESOURCE_GROUP \
+  --name $INFRA_DEPLOYMENT \
+  --query properties.outputs.containerAppsIdentityPrincipalId.value \
+  --output tsv)
+
+if [ -z "$CONTAINER_APPS_IDENTITY_ID" ] || [ -z "$CONTAINER_APPS_IDENTITY_PRINCIPAL_ID" ]; then
+    echo -e "${RED}❌ Could not get Container Apps Identity from deployment $INFRA_DEPLOYMENT${NC}"
+    exit 1
+fi
+
 az deployment group create \
   --resource-group $RESOURCE_GROUP \
   --template-file infrastructure/applications.bicep \
@@ -129,6 +146,8 @@ az deployment group create \
                prefix=ccp4i2-bicep \
                aadClientId="${NEXT_PUBLIC_AAD_CLIENT_ID:-}" \
                aadTenantId="${NEXT_PUBLIC_AAD_TENANT_ID:-}" \
+               containerAppsIdentityId="$CONTAINER_APPS_IDENTITY_ID" \
+               containerAppsIdentityPrincipalId="$CONTAINER_APPS_IDENTITY_PRINCIPAL_ID" \
   --name $APP_DEPLOYMENT_NAME \
   --mode Incremental
 

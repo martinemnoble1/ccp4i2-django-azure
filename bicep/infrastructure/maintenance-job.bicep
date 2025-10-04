@@ -1,3 +1,4 @@
+//Parameters
 @description('Container Apps Environment ID')
 param containerAppsEnvironmentId string
 
@@ -19,6 +20,9 @@ param imageTagServer string = 'latest'
 @description('Resource naming prefix')
 param prefix string = 'ccp4i2-bicep'
 
+@description('Shared Container Apps Identity ID')
+param containerAppsIdentityId string
+
 // Variables
 var maintenanceJobName = '${prefix}-maintenance-job'
 
@@ -36,13 +40,17 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
   name: maintenanceJobName
   location: resourceGroup().location
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${containerAppsIdentityId}': {}
+    }
   }
   properties: {
     environmentId: containerAppsEnvironmentId
     configuration: {
       triggerType: 'Manual'
       replicaTimeout: 28800 // 8 hours for long-running tar extraction
+      replicaRetryLimit: 3 // Allow 3 retries to help diagnose issues
       registries: [
         {
           server: acrLoginServer
@@ -58,34 +66,34 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
         {
           name: 'db-password'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/database-admin-password'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
         {
           name: 'django-secret-key'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/django-secret-key'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
         {
           name: 'servicebus-connection'
           keyVaultUrl: '${keyVault.properties.vaultUri}secrets/servicebus-connection'
-          identity: 'system'
+          identity: containerAppsIdentityId
         }
       ]
     }
     template: {
       containers: [
         {
-          name: 'maintenance'
+          name: 'server'
           image: '${acrLoginServer}/ccp4i2/server:${imageTagServer}'
-          command: [
-            'sh'
-            '-c'
-            'cd /mnt/ccp4data/ccp4-9 && ./BINARY.setup --run-from-script && ccp4-python -m pip install -r /usr/src/app/requirements.txt'
-          ]
           resources: {
             cpu: json('2.0')
             memory: '4.0Gi'
           }
+          command: [
+            'sh'
+            '-c'
+            'cd /mnt/ccp4data && mv ccp4-9 ccp4-9.unsafe3 && tar -xzf ccp4-9.0.011-shelx-arpwarp-linux64.tar.gz --checkpoint=1000 --checkpoint-action=exec="echo Extracted %u files..." && cd ccp4-9 && ./BINARY.setup --run-from-script && ccp4-python -m pip install -r /usr/src/app/requirements.txt'
+          ]
           env: [
             {
               name: 'DJANGO_SETTINGS_MODULE'
@@ -93,7 +101,7 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
             }
             {
               name: 'DB_HOST'
-              value: postgresServerFqdn
+              value: postgresServerFqdn // Will resolve to private IP via private DNS zone
             }
             {
               name: 'DB_PORT'
@@ -125,11 +133,11 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
             }
             {
               name: 'DB_SSL_REQUIRE_CERT'
-              value: 'false'
+              value: 'false' // Private endpoint uses Azure's trusted certificates
             }
             {
               name: 'DEBUG'
-              value: 'true'
+              value: 'true' // Ensure DEBUG is false in production
             }
             {
               name: 'CCP4_DATA_PATH'
@@ -147,11 +155,31 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
               name: 'SERVICE_BUS_QUEUE_NAME'
               value: '${prefix}-jobs'
             }
+            {
+              name: 'FILE_UPLOAD_MAX_MEMORY_SIZE'
+              value: '104857600' // 100MB in bytes
+            }
+            {
+              name: 'DATA_UPLOAD_MAX_MEMORY_SIZE'
+              value: '104857600' // 100MB in bytes
+            }
+            {
+              name: 'FILE_UPLOAD_MAX_NUMBER_FILES'
+              value: '10'
+            }
           ]
           volumeMounts: [
             {
               volumeName: 'ccp4data-volume'
               mountPath: '/mnt/ccp4data'
+            }
+            {
+              volumeName: 'staticfiles-volume'
+              mountPath: '/mnt/staticfiles'
+            }
+            {
+              volumeName: 'mediafiles-volume'
+              mountPath: '/mnt/mediafiles'
             }
           ]
         }
@@ -160,6 +188,16 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
         {
           name: 'ccp4data-volume'
           storageName: 'ccp4data-mount'
+          storageType: 'AzureFile'
+        }
+        {
+          name: 'staticfiles-volume'
+          storageName: 'staticfiles-mount'
+          storageType: 'AzureFile'
+        }
+        {
+          name: 'mediafiles-volume'
+          storageName: 'mediafiles-mount'
           storageType: 'AzureFile'
         }
       ]

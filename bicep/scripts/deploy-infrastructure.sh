@@ -125,10 +125,25 @@ if [ $DEPLOYMENT_EXIT_CODE -eq 0 ]; then
     az keyvault network-rule remove --name $KEY_VAULT_NAME --ip-address $CURRENT_IP
     az keyvault update --name $KEY_VAULT_NAME --public-network-access Disabled
     
+    # Get shared identity outputs
+    CONTAINER_APPS_IDENTITY_ID=$(az deployment group show \
+      --resource-group $RESOURCE_GROUP \
+      --name $INFRA_DEPLOYMENT_NAME \
+      --query properties.outputs.containerAppsIdentityId.value \
+      --output tsv)
+    
+    CONTAINER_APPS_IDENTITY_PRINCIPAL_ID=$(az deployment group show \
+      --resource-group $RESOURCE_GROUP \
+      --name $INFRA_DEPLOYMENT_NAME \
+      --query properties.outputs.containerAppsIdentityPrincipalId.value \
+      --output tsv)
+    
     echo -e "${YELLOW}📝 Infrastructure Details:${NC}"
     echo "ACR Name: $ACR_NAME"
     echo "ACR Login Server: $ACR_LOGIN_SERVER"
     echo "Key Vault: $KEY_VAULT_NAME (private access only)"
+    echo "Shared Identity ID: $CONTAINER_APPS_IDENTITY_ID"
+    echo "Shared Identity Principal ID: $CONTAINER_APPS_IDENTITY_PRINCIPAL_ID"
     
     # Store outputs in environment file for application deployment
     cat > .env.deployment << EOF
@@ -136,6 +151,8 @@ ACR_NAME=$ACR_NAME
 ACR_LOGIN_SERVER=$ACR_LOGIN_SERVER
 RESOURCE_GROUP=$RESOURCE_GROUP
 POSTGRES_PASSWORD=$DB_PASSWORD
+CONTAINER_APPS_IDENTITY_ID=$CONTAINER_APPS_IDENTITY_ID
+CONTAINER_APPS_IDENTITY_PRINCIPAL_ID=$CONTAINER_APPS_IDENTITY_PRINCIPAL_ID
 EOF
     
     echo -e "${GREEN}✅ Infrastructure deployment completed. Environment saved to .env.deployment${NC}"

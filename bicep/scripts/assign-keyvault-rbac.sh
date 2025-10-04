@@ -12,8 +12,8 @@ else
   exit 1
 fi
 
-# List of container app names (update if needed)
-APPS=("ccp4i2-bicep-server" "ccp4i2-bicep-web" "ccp4i2-bicep-worker" "ccp4i2-bicep-management")
+# List of container app and job names (update if needed)
+APPS=("ccp4i2-bicep-server" "ccp4i2-bicep-web" "ccp4i2-bicep-worker" "ccp4i2-bicep-maintenance-job" "ccp4i2-bicep-management")
 ROLE="Key Vault Secrets User"
 
 # Get Key Vault resource ID
@@ -23,15 +23,19 @@ if [ -z "$KV_ID" ]; then
   exit 1
 fi
 
-echo "Assigning $ROLE to container apps for Key Vault: $KEY_VAULT_NAME"
+echo "Assigning $ROLE to container apps and jobs for Key Vault: $KEY_VAULT_NAME"
 for APP in "${APPS[@]}"; do
-  PRINCIPAL_ID=$(az containerapp show -g "$RESOURCE_GROUP" -n "$APP" --query identity.principalId -o tsv)
-  if [ -z "$PRINCIPAL_ID" ]; then
-    echo "⚠️  Could not get principalId for $APP (may not be deployed yet)"
+  if [[ "$APP" == *"job"* ]]; then
+    PRINCIPAL_ID=$(az containerapp job show -g "$RESOURCE_GROUP" -n "$APP" --query identity.principalId -o tsv 2>/dev/null)
+  else
+    PRINCIPAL_ID=$(az containerapp show -g "$RESOURCE_GROUP" -n "$APP" --query identity.principalId -o tsv 2>/dev/null)
+  fi
+  if [ -z "$PRINCIPAL_ID" ] || [ "$PRINCIPAL_ID" == "null" ]; then
+    echo "⚠️  Could not get principalId for $APP (may not be deployed yet or does not exist)"
     continue
   fi
   echo "Assigning $ROLE to $APP ($PRINCIPAL_ID)"
-  az role assignment create --assignee "$PRINCIPAL_ID" --role "$ROLE" --scope "$KV_ID"
+  az role assignment create --assignee "$PRINCIPAL_ID" --role "$ROLE" --scope "$KV_ID" 2>/dev/null || echo "⚠️  Failed to assign role to $APP (may already have it or other issue)"
   echo "✅ $ROLE assigned to $APP"
   sleep 1
   # Sleep to avoid throttling
