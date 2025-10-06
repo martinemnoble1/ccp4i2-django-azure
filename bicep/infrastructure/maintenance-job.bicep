@@ -106,6 +106,10 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
           ]
           env: [
             {
+              name: 'EXECUTION_MODE'
+              value: 'azure'
+            }
+            {
               name: 'DJANGO_SETTINGS_MODULE'
               value: 'ccp4x.config.settings'
             }

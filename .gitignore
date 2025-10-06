@@ -7,6 +7,10 @@ bicep/.env.vm
 # Parameters files with secrets (use .template versions for reference)
 bicep/infrastructure/applications.parameters.json
 
+# Compiled ARM templates (auto-generated from Bicep)
+bicep/infrastructure/*.json
+!bicep/infrastructure/applications.parameters.json
+
 # Allow template files
 !bicep/.env.deployment.template
 !bicep/infrastructure/applications.parameters.json.template

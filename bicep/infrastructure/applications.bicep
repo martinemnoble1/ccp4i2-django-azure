@@ -159,6 +159,10 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
           ]
           env: [
             {
+              name: 'EXECUTION_MODE'
+              value: 'azure'
+            }
+            {
               name: 'DJANGO_SETTINGS_MODULE'
               value: 'ccp4x.config.settings'
             }
@@ -328,11 +332,7 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
     managedEnvironmentId: containerAppsEnvironmentId
     configuration: {
       activeRevisionsMode: 'Single'
-      ingress: {
-        external: false // Internal only - no external access needed
-        targetPort: 8000
-        allowInsecure: true
-      }
+      // No ingress - worker is a background job processor, doesn't serve HTTP
       registries: [
         {
           server: acrLoginServer
@@ -374,6 +374,10 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
             memory: '4.0Gi'
           }
           env: [
+            {
+              name: 'EXECUTION_MODE'
+              value: 'azure'
+            }
             {
               name: 'DJANGO_SETTINGS_MODULE'
               value: 'ccp4x.config.settings'

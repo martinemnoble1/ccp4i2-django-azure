@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "containerAppsEnvironmentId": {
+      "value": "/subscriptions/73fdecd0-baa0-4e89-877f-fb9adc5646d7/resourceGroups/ccp4i2-bicep-rg-ne/providers/Microsoft.App/managedEnvironments/YOUR_ENVIRONMENT_NAME"
+    },
+    "acrLoginServer": {
+      "value": "ccp4acrnekmay.azurecr.io"
+    },
+    "acrName": {
+      "value": "ccp4acrnekmay"
+    },
+    "postgresServerFqdn": {
+      "value": "psql-ne-kmayz3.postgres.database.azure.com"
+    },
+    "keyVaultName": {
+      "value": "kv-ne-kmayz3"
+    },
+    "imageTagWeb": {
+      "value": "latest"
+    },
+    "imageTagServer": {
+      "value": "latest"
+    },
+    "prefix": {
+      "value": "ccp4i2-bicep"
+    },
+    "aadClientId": {
+      "value": "cc780b24-ca44-4fec-b8e6-48d0c696a888"
+    },
+    "aadTenantId": {
+      "value": "9c5012c9-b616-44c2-a917-66814fbe3e87"
+    },
+    "containerAppsIdentityId": {
+      "value": "/subscriptions/73fdecd0-baa0-4e89-877f-fb9adc5646d7/resourceGroups/ccp4i2-bicep-rg-ne/providers/Microsoft.ManagedIdentity/userAssignedIdentities/YOUR_IDENTITY_NAME"
+    },
+    "containerAppsIdentityPrincipalId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    }
+  }
+}

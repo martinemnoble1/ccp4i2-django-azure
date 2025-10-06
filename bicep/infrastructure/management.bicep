@@ -112,7 +112,10 @@ resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
           }
           // Remove health probes since we're not running the Django server
           // This is a management/debug container, not a production service
-          env: [
+          env: [            {
+              name: 'EXECUTION_MODE'
+              value: 'azure'
+            }
             {
               name: 'DJANGO_SETTINGS_MODULE'
               value: 'ccp4x.config.settings'
@@ -167,7 +170,7 @@ resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             {
               name: 'ALLOWED_HOSTS'
-              value: '${managementAppName},${managementAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1,*'
+              value: '${serverAppName},${serverAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1,*'
             }
             {
               name: 'CORS_ALLOWED_ORIGINS'
