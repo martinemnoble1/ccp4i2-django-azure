@@ -562,6 +562,10 @@ resource webApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'NEXT_PUBLIC_AAD_TENANT_ID'
               value: aadTenantId
             }
+            {
+              name: 'NEXT_PUBLIC_REQUIRE_AUTH'
+              value: 'true'
+            }
           ]
           volumeMounts: [
             {

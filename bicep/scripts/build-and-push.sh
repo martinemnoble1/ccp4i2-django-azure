@@ -197,6 +197,7 @@ if [ "$BUILD_WEB" = true ]; then
       --file Docker/Dockerfile.web \
       --build-arg NEXT_PUBLIC_AAD_CLIENT_ID=$NEXT_PUBLIC_AAD_CLIENT_ID \
       --build-arg NEXT_PUBLIC_AAD_TENANT_ID=$NEXT_PUBLIC_AAD_TENANT_ID \
+      --build-arg NEXT_PUBLIC_REQUIRE_AUTH=true \
       ./client
 
     if [ $? -ne 0 ]; then
