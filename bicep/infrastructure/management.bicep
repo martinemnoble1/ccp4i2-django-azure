@@ -1,22 +1,11 @@
-//Parameters
 @description('Container Apps Environment ID')
 param containerAppsEnvironmentId string
-
-
-//command: [
-//            'bash'
-//            '-c'
-//            'mkdir -p /mnt/ccp4data/py-packages && python3 -m pip install --target /mnt/ccp4data/py-packages django==3.2.25 asgiref==3.3.4 django-cors-headers==3.13.0 django-filter==23.5 djangorestframework==3.14.0 uvicorn==0.20.0 whitenoise gunicorn psycopg2-binary gemmi pytest requests-cache requests configparser tomli numpy scipy pandas biopython Pillow azure-servicebus azure-identity azure-keyvault-secrets azure-monitor-opentelemetry azure-storage-blob 2>&1 | tee /mnt/ccp4data/pip-install.log && echo "✅ Package installation completed successfully"'
-//          ]ng
 
 @description('Azure Container Registry login server')
 param acrLoginServer string
 
 @description('Azure Container Registry name')
 param acrName string
-
-@description('Bash command to execute - typically a long-running maintenance task')
-param maintenanceCommand string = 'mkdir -p /mnt/ccp4data/py-packages && python3 -m pip install --target /mnt/ccp4data/py-packages -r /usr/src/app/requirements.txt 2>&1 | tee /mnt/ccp4data/pip-install.log && echo "✅ Package installation completed successfully"'
 
 @description('PostgreSQL server FQDN - will resolve to private IP via private DNS zone')
 param postgresServerFqdn string
@@ -33,8 +22,28 @@ param prefix string = 'ccp4i2-bicep'
 @description('Shared Container Apps Identity ID')
 param containerAppsIdentityId string
 
+@description('Shared Container Apps Identity Principal ID')
+param containerAppsIdentityPrincipalId string
+
+// - PostgreSQL is accessed via private endpoint (no public access)
+// - Key Vault is accessed via private endpoint (no public access)
+// - Storage Account is accessed via private endpoint (no public access)
+// - Container Apps run in dedicated VNet subnet with proper delegation
+// - All communication happens within the Azure private network
+
+// Management Container App Purpose:
+// This is a long-lived container for interactive debugging and maintenance tasks.
+// It runs 'tail -f /dev/null' to stay alive, allowing you to exec into it.
+// Access via: az containerapp exec -g <rg> -n <app-name> --command bash
+// Use cases:
+//   - Interactive Django shell (python manage.py shell)
+//   - Database migrations and inspection
+//   - File system debugging (mounted volumes)
+//   - Environment variable inspection
+
 // Variables
-var maintenanceJobName = '${prefix}-maintenance-job'
+var managementAppName = '${prefix}-management'
+var webAppName = '${prefix}-web'
 
 // Existing resources
 resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' existing = {
@@ -45,9 +54,9 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' existing = {
   name: keyVaultName
 }
 
-// Maintenance Job for long-running tasks like tar extraction
-resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
-  name: maintenanceJobName
+// Management Container App
+resource managementApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: managementAppName
   location: resourceGroup().location
   identity: {
     type: 'UserAssigned'
@@ -56,11 +65,10 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
     }
   }
   properties: {
-    environmentId: containerAppsEnvironmentId
+    managedEnvironmentId: containerAppsEnvironmentId
     configuration: {
-      triggerType: 'Manual'
-      replicaTimeout: 28800 // 8 hours for long-running tar extraction
-      replicaRetryLimit: 0 // Allow 1 retry to help diagnose issues
+      activeRevisionsMode: 'Single'
+      // No ingress - this is a management/debug container accessed via 'az containerapp exec'
       registries: [
         {
           server: acrLoginServer
@@ -95,15 +103,15 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
         {
           name: 'server'
           image: '${acrLoginServer}/ccp4i2/server:${imageTagServer}'
+          // Override default command to keep container running for interactive access
+          command: ['/bin/bash']
+          args: ['-c', 'export PYTHONPATH="/mnt/ccp4data/py-packages:$PYTHONPATH" && echo "Management container ready for interactive access" && tail -f /dev/null']
           resources: {
             cpu: json('2.0')
             memory: '4.0Gi'
           }
-          command: [
-            'bash'
-            '-c'
-            '${maintenanceCommand}'
-          ]
+          // Remove health probes since we're not running the Django server
+          // This is a management/debug container, not a production service
           env: [
             {
               name: 'DJANGO_SETTINGS_MODULE'
@@ -158,6 +166,18 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
               value: '/mnt/ccp4data/ccp4i2-projects'
             }
             {
+              name: 'ALLOWED_HOSTS'
+              value: '${managementAppName},${managementAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io,localhost,127.0.0.1,*'
+            }
+            {
+              name: 'CORS_ALLOWED_ORIGINS'
+              value: 'http://${webAppName},https://${webAppName}.whitecliff-258bc831.northeurope.azurecontainerapps.io'
+            }
+            {
+              name: 'CORS_ALLOW_CREDENTIALS'
+              value: 'True'
+            }
+            {
               name: 'SERVICE_BUS_CONNECTION_STRING'
               secretRef: 'servicebus-connection'
             }
@@ -194,6 +214,40 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
           ]
         }
       ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 10
+        rules: [
+          {
+            name: 'cpu-scaling'
+            custom: {
+              type: 'cpu'
+              metadata: {
+                type: 'Utilization'
+                value: '70'
+              }
+            }
+          }
+          {
+            name: 'memory-scaling'
+            custom: {
+              type: 'memory'
+              metadata: {
+                type: 'Utilization'
+                value: '70'
+              }
+            }
+          }
+          {
+            name: 'http-scaling'
+            http: {
+              metadata: {
+                concurrentRequests: '20' // Lower threshold for faster scaling on file uploads
+              }
+            }
+          }
+        ]
+      }
       volumes: [
         {
           name: 'ccp4data-volume'
@@ -214,3 +268,43 @@ resource maintenanceJob 'Microsoft.App/jobs@2023-05-01' = {
     }
   }
 }
+
+
+
+
+// Authentication configuration for Server App removed - authentication now handled in frontend
+
+// Authentication configuration for Web App removed - authentication now handled in frontend
+
+// Key Vault RBAC Role Assignment for Server App (Key Vault Secrets User)
+// NOTE: Role assignments are handled separately to avoid conflicts on redeployment
+// resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(keyVault.id, serverApp.id, '4633458b-17de-408a-b874-0445c86b69e6', roleAssignmentSuffix)
+//   scope: keyVault
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId(
+//       'Microsoft.Authorization/roleDefinitions',
+//       '4633458b-17de-408a-b874-0445c86b69e6'
+//     ) // Key Vault Secrets User
+//     principalId: serverApp.identity.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+// }
+
+// Key Vault RBAC Role Assignment for Worker App (Key Vault Secrets User)
+// NOTE: Role assignments are handled separately to avoid conflicts on redeployment
+// resource keyVaultRoleAssignmentWorker 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+//   name: guid(keyVault.id, workerApp.id, '4633458b-17de-408a-b874-0445c86b69e6', roleAssignmentSuffix)
+//   scope: keyVault
+//   properties: {
+//     roleDefinitionId: subscriptionResourceId(
+//       'Microsoft.Authorization/roleDefinitions',
+//       '4633458b-17de-408a-b874-0445c86b69e6'
+//     ) // Key Vault Secrets User
+//     principalId: workerApp.identity.principalId
+//     principalType: 'ServicePrincipal'
+//   }
+// }
+
+// Outputs
+output managementAppName string = managementApp.name

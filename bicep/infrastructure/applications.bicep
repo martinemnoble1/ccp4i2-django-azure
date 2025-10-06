@@ -113,6 +113,8 @@ resource serverApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'server'
           image: '${acrLoginServer}/ccp4i2/server:${imageTagServer}'
+          command: ['/bin/bash']
+          args: ['-c', 'export PYTHONPATH="/mnt/ccp4data/py-packages:/usr/src/app:$PYTHONPATH" && exec /usr/src/app/startup.sh']
           resources: {
             cpu: json('2.0')
             memory: '4.0Gi'
@@ -365,7 +367,8 @@ resource workerApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'worker'
           image: '${acrLoginServer}/ccp4i2/server:${imageTagServer}'
-          command: ['/usr/src/app/startup-worker.sh'] // Use worker startup script instead of Django server
+          command: ['/bin/bash']
+          args: ['-c', 'export PYTHONPATH="/mnt/ccp4data/py-packages:/usr/src/app:$PYTHONPATH" && exec /usr/src/app/startup-worker.sh']
           resources: {
             cpu: json('2.0')
             memory: '4.0Gi'
